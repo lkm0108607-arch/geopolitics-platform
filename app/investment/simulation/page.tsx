@@ -17,7 +17,7 @@ import {
   RefreshCw,
   ChevronDown,
 } from "lucide-react";
-import { etfRecommendations } from "@/data/investmentStrategy";
+import { etfRecommendations, type ETFRecommendation } from "@/data/investmentStrategy";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -89,61 +89,91 @@ function formatNum(n: number | null | undefined): string {
   return n.toLocaleString("ko-KR");
 }
 
-// ─── TradingView Chart Component (iframe approach for stability) ─────────────
+// ─── Price Detail Panel (replaces TradingView) ──────────────────────────────
 
-function TradingViewChart({ ticker, interval }: { ticker: string; interval: string }) {
-  const [mounted, setMounted] = useState(false);
-  const [chartError, setChartError] = useState(false);
+function PriceDetailPanel({ ticker, price, etfInfo }: {
+  ticker: string;
+  price: StockPrice | undefined;
+  etfInfo: ETFRecommendation | undefined;
+}) {
+  if (!etfInfo) return null;
 
-  useEffect(() => { setMounted(true); }, []);
-
-  if (!mounted) {
-    return <div className="flex items-center justify-center h-full text-slate-500 text-sm">차트 로딩 중...</div>;
-  }
-
-  if (chartError) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm gap-2">
-        <BarChart3 className="w-8 h-8 text-slate-600" />
-        <p>차트를 불러올 수 없습니다.</p>
-        <button onClick={() => setChartError(false)} className="text-xs text-blue-400 hover:text-blue-300">다시 시도</button>
-      </div>
-    );
-  }
-
-  const widgetConfig = {
-    autosize: true,
-    symbol: `KRX:${ticker}`,
-    interval: interval,
-    timezone: "Asia/Seoul",
-    theme: "dark",
-    style: "1",
-    locale: "kr",
-    backgroundColor: "rgba(15, 23, 42, 1)",
-    gridColor: "rgba(30, 41, 59, 0.5)",
-    allow_symbol_change: false,
-    save_image: false,
-    hide_top_toolbar: false,
-    hide_legend: false,
-    hide_side_toolbar: true,
-    withdateranges: true,
-    details: false,
-    hotlist: false,
-    calendar: false,
-  };
-
-  const encodedConfig = encodeURIComponent(JSON.stringify(widgetConfig));
-  const iframeSrc = `https://s.tradingview.com/widgetembed/?frameElementId=tv_chart&symbol=KRX:${ticker}&interval=${interval}&theme=dark&style=1&locale=kr&timezone=Asia/Seoul&backgroundColor=rgba(15,23,42,1)&gridColor=rgba(30,41,59,0.5)&allow_symbol_change=0&save_image=0&hide_top_toolbar=0&hide_legend=0&hide_side_toolbar=1&withdateranges=1&details=0&hotlist=0&calendar=0`;
+  const currentPrice = price?.currentPrice ?? etfInfo.currentPrice;
+  const change = price?.change ?? 0;
+  const changePct = price?.changePercent ?? 0;
+  const isUp = change >= 0;
 
   return (
-    <iframe
-      key={`${ticker}-${interval}`}
-      src={iframeSrc}
-      style={{ width: "100%", height: "100%", border: "none" }}
-      allow="autoplay; encrypted-media"
-      sandbox="allow-scripts allow-same-origin allow-popups"
-      onError={() => setChartError(true)}
-    />
+    <div className="h-full flex flex-col">
+      {/* Main price display */}
+      <div className="flex-1 flex flex-col items-center justify-center p-6">
+        <p className="text-slate-500 text-sm mb-2">{etfInfo.nameKr}</p>
+        <p className="text-5xl font-bold text-white mb-3">
+          {formatNum(currentPrice)}<span className="text-2xl text-slate-400">원</span>
+        </p>
+        {price && (
+          <div className={`flex items-center gap-2 text-lg font-medium ${isUp ? "text-red-400" : "text-blue-400"}`}>
+            {isUp ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
+            <span>{isUp ? "+" : ""}{formatNum(change)}원</span>
+            <span className="text-sm">({isUp ? "+" : ""}{changePct?.toFixed(2) ?? "0.00"}%)</span>
+          </div>
+        )}
+      </div>
+
+      {/* Price bar visualization */}
+      {price && price.dayLow != null && price.dayHigh != null && price.dayHigh > price.dayLow && (
+        <div className="px-6 pb-4">
+          <div className="flex justify-between text-xs text-slate-500 mb-1">
+            <span>저가 {formatNum(price.dayLow)}</span>
+            <span>고가 {formatNum(price.dayHigh)}</span>
+          </div>
+          <div className="relative h-2 bg-slate-700 rounded-full overflow-hidden">
+            <div
+              className="absolute h-full bg-gradient-to-r from-blue-500 via-slate-400 to-red-500 rounded-full"
+              style={{ width: "100%" }}
+            />
+            <div
+              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-slate-900 shadow-lg"
+              style={{
+                left: `${Math.min(Math.max(((currentPrice - price.dayLow) / (price.dayHigh - price.dayLow)) * 100, 0), 100)}%`,
+                transform: "translate(-50%, -50%)",
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Stats grid */}
+      <div className="grid grid-cols-2 gap-px bg-slate-800 border-t border-slate-800">
+        {[
+          { label: "전일 종가", value: price ? `${formatNum(price.previousClose)}원` : "-" },
+          { label: "거래량", value: price?.volume != null && price.volume > 0 ? formatNum(price.volume) : "-" },
+          { label: "리스크", value: etfInfo.riskLevel },
+          { label: "기대수익", value: etfInfo.expectedReturn },
+          { label: "카테고리", value: etfInfo.category },
+          { label: "비중", value: `${etfInfo.currentWeight}%` },
+        ].map(({ label, value }) => (
+          <div key={label} className="bg-slate-900 px-4 py-3">
+            <p className="text-[10px] text-slate-500">{label}</p>
+            <p className="text-sm text-white font-medium">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Timeframes */}
+      <div className="border-t border-slate-800 p-4">
+        <p className="text-xs text-slate-500 mb-2">기간별 기대수익</p>
+        <div className="grid grid-cols-4 gap-2">
+          {etfInfo.timeframes.map((tf) => (
+            <div key={tf.label} className="bg-slate-800/50 rounded-lg p-2 text-center">
+              <p className="text-[10px] text-slate-500">{tf.label}</p>
+              <p className="text-xs font-bold text-emerald-400">{tf.expectedReturn}</p>
+              <p className="text-[10px] text-red-400/70">{tf.maxRisk}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -160,7 +190,6 @@ export default function SimulationPage() {
 
   // Selected ETF & chart
   const [selectedETF, setSelectedETF] = useState<string>(etfRecommendations[0]?.ticker || "");
-  const [chartInterval, setChartInterval] = useState<string>("D");
   const [prices, setPrices] = useState<Record<string, StockPrice>>({});
   const [priceLoading, setPriceLoading] = useState(false);
 
@@ -545,30 +574,9 @@ export default function SimulationPage() {
               )}
             </div>
 
-            {/* Chart Interval Tabs */}
-            <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
-              {[
-                { label: "1일", value: "D" },
-                { label: "1주", value: "W" },
-                { label: "1개월", value: "M" },
-                { label: "1시간", value: "60" },
-                { label: "15분", value: "15" },
-              ].map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setChartInterval(opt.value)}
-                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
-                    chartInterval === opt.value ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-
-            {/* TradingView Chart */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden" style={{ height: "450px" }}>
-              <TradingViewChart ticker={selectedETF} interval={chartInterval} />
+            {/* Price Detail Panel */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden" style={{ minHeight: "400px" }}>
+              <PriceDetailPanel ticker={selectedETF} price={selectedPrice} etfInfo={selectedETFInfo} />
             </div>
           </div>
 
