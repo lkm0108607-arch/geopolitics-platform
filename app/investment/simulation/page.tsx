@@ -491,8 +491,8 @@ export default function SimulationPage() {
                         {p ? (
                           <>
                             <p className="text-sm font-medium text-white">{formatNum(p.currentPrice)}</p>
-                            <p className={`text-[10px] ${p.change >= 0 ? "text-red-400" : "text-blue-400"}`}>
-                              {p.change >= 0 ? "+" : ""}{p.changePercent.toFixed(2)}%
+                            <p className={`text-[10px] ${(p.change ?? 0) >= 0 ? "text-red-400" : "text-blue-400"}`}>
+                              {(p.change ?? 0) >= 0 ? "+" : ""}{p.changePercent?.toFixed(2) ?? "0.00"}%
                             </p>
                           </>
                         ) : (
@@ -524,13 +524,13 @@ export default function SimulationPage() {
                   {formatNum(selectedPrice?.currentPrice || currentPrice)}원
                 </span>
                 {selectedPrice && (
-                  <div className={`flex items-center gap-1 pb-1 ${selectedPrice.change >= 0 ? "text-red-400" : "text-blue-400"}`}>
-                    {selectedPrice.change >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                  <div className={`flex items-center gap-1 pb-1 ${(selectedPrice.change ?? 0) >= 0 ? "text-red-400" : "text-blue-400"}`}>
+                    {(selectedPrice.change ?? 0) >= 0 ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
                     <span className="text-sm font-medium">
-                      {selectedPrice.change >= 0 ? "+" : ""}{selectedPrice.changePercent.toFixed(2)}%
+                      {(selectedPrice.change ?? 0) >= 0 ? "+" : ""}{selectedPrice.changePercent?.toFixed(2) ?? "0.00"}%
                     </span>
                     <span className="text-sm">
-                      ({selectedPrice.change >= 0 ? "+" : ""}{formatNum(selectedPrice.change)})
+                      ({(selectedPrice.change ?? 0) >= 0 ? "+" : ""}{formatNum(selectedPrice.change)})
                     </span>
                   </div>
                 )}
@@ -760,7 +760,7 @@ export default function SimulationPage() {
                     </div>
                     {sp && (
                       <div className="mt-2 flex gap-3 text-[10px] text-slate-500">
-                        <span>등락 {sp.change >= 0 ? "+" : ""}{sp.changePercent.toFixed(2)}%</span>
+                        <span>등락 {(sp.change ?? 0) >= 0 ? "+" : ""}{sp.changePercent?.toFixed(2) ?? "0.00"}%</span>
                         {sp.volume > 0 && <span>거래량 {formatNum(sp.volume)}</span>}
                       </div>
                     )}
@@ -768,7 +768,7 @@ export default function SimulationPage() {
                       <div className="mt-2">
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="text-[10px] text-slate-500">비중</span>
-                          <span className="text-[10px] text-slate-400 font-medium">{((currentValue / totalAssets) * 100).toFixed(1)}%</span>
+                          <span className="text-[10px] text-slate-400 font-medium">{((currentValue / totalAssets) * 100)?.toFixed(1) ?? "0.0"}%</span>
                         </div>
                         <div className="w-full bg-slate-700 rounded-full h-1.5">
                           <div className="bg-emerald-500 h-full rounded-full" style={{ width: `${Math.min((currentValue / totalAssets) * 100, 100)}%` }} />
@@ -792,7 +792,7 @@ export default function SimulationPage() {
                   })}
                 </div>
                 <div className="flex flex-wrap gap-3 text-[10px]">
-                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-slate-500" /> 현금 {((user?.balance || 0) / totalAssets * 100).toFixed(1)}%</span>
+                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-slate-500" /> 현금 {((user?.balance || 0) / totalAssets * 100)?.toFixed(1) ?? "0.0"}%</span>
                   <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-cyan-500" /> 방어형</span>
                   <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-red-500" /> 공격형</span>
                   <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-amber-500" /> 헤지형</span>
