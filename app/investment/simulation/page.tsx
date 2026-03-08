@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -78,75 +78,72 @@ function getSession(): string | null {
 function setSession(n: string) { sessionStorage.setItem(SESSION_KEY, n); }
 function clearSession() { sessionStorage.removeItem(SESSION_KEY); }
 
-function formatKRW(n: number): string {
+function formatKRW(n: number | null | undefined): string {
+  if (n == null || isNaN(n)) return "0원";
   if (Math.abs(n) >= 100000000) return (n / 100000000).toFixed(1) + "억원";
   if (Math.abs(n) >= 10000) return (n / 10000).toFixed(0) + "만원";
   return n.toLocaleString("ko-KR") + "원";
 }
-function formatNum(n: number): string { return n.toLocaleString("ko-KR"); }
+function formatNum(n: number | null | undefined): string {
+  if (n == null || isNaN(n)) return "0";
+  return n.toLocaleString("ko-KR");
+}
 
-// ─── TradingView Chart Component ─────────────────────────────────────────────
+// ─── TradingView Chart Component (iframe approach for stability) ─────────────
 
 function TradingViewChart({ ticker, interval }: { ticker: string; interval: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
   const [mounted, setMounted] = useState(false);
+  const [chartError, setChartError] = useState(false);
 
   useEffect(() => { setMounted(true); }, []);
 
-  useEffect(() => {
-    if (!mounted || !containerRef.current) return;
+  if (!mounted) {
+    return <div className="flex items-center justify-center h-full text-slate-500 text-sm">차트 로딩 중...</div>;
+  }
 
-    // Clear previous widget
-    const container = containerRef.current;
-    while (container.firstChild) {
-      container.removeChild(container.firstChild);
-    }
+  if (chartError) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-slate-500 text-sm gap-2">
+        <BarChart3 className="w-8 h-8 text-slate-600" />
+        <p>차트를 불러올 수 없습니다.</p>
+        <button onClick={() => setChartError(false)} className="text-xs text-blue-400 hover:text-blue-300">다시 시도</button>
+      </div>
+    );
+  }
 
-    // Create widget wrapper
-    const widgetDiv = document.createElement("div");
-    widgetDiv.className = "tradingview-widget-container__widget";
-    widgetDiv.style.height = "100%";
-    widgetDiv.style.width = "100%";
-    container.appendChild(widgetDiv);
+  const widgetConfig = {
+    autosize: true,
+    symbol: `KRX:${ticker}`,
+    interval: interval,
+    timezone: "Asia/Seoul",
+    theme: "dark",
+    style: "1",
+    locale: "kr",
+    backgroundColor: "rgba(15, 23, 42, 1)",
+    gridColor: "rgba(30, 41, 59, 0.5)",
+    allow_symbol_change: false,
+    save_image: false,
+    hide_top_toolbar: false,
+    hide_legend: false,
+    hide_side_toolbar: true,
+    withdateranges: true,
+    details: false,
+    hotlist: false,
+    calendar: false,
+  };
 
-    const script = document.createElement("script");
-    script.src = "https://s.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-    script.async = true;
-    script.type = "text/javascript";
-    script.textContent = JSON.stringify({
-      autosize: true,
-      symbol: `KRX:${ticker}`,
-      interval: interval,
-      timezone: "Asia/Seoul",
-      theme: "dark",
-      style: "1",
-      locale: "kr",
-      backgroundColor: "rgba(15, 23, 42, 1)",
-      gridColor: "rgba(30, 41, 59, 0.5)",
-      allow_symbol_change: false,
-      save_image: false,
-      hide_top_toolbar: false,
-      hide_legend: false,
-      hide_side_toolbar: true,
-      withdateranges: true,
-      details: false,
-      hotlist: false,
-      calendar: false,
-      support_host: "https://www.tradingview.com",
-    });
-    container.appendChild(script);
-
-    return () => {
-      while (container.firstChild) {
-        container.removeChild(container.firstChild);
-      }
-    };
-  }, [ticker, interval, mounted]);
-
-  if (!mounted) return <div className="flex items-center justify-center h-full text-slate-500 text-sm">차트 로딩 중...</div>;
+  const encodedConfig = encodeURIComponent(JSON.stringify(widgetConfig));
+  const iframeSrc = `https://s.tradingview.com/widgetembed/?frameElementId=tv_chart&symbol=KRX:${ticker}&interval=${interval}&theme=dark&style=1&locale=kr&timezone=Asia/Seoul&backgroundColor=rgba(15,23,42,1)&gridColor=rgba(30,41,59,0.5)&allow_symbol_change=0&save_image=0&hide_top_toolbar=0&hide_legend=0&hide_side_toolbar=1&withdateranges=1&details=0&hotlist=0&calendar=0`;
 
   return (
-    <div ref={containerRef} style={{ height: "100%", width: "100%" }} />
+    <iframe
+      key={`${ticker}-${interval}`}
+      src={iframeSrc}
+      style={{ width: "100%", height: "100%", border: "none" }}
+      allow="autoplay; encrypted-media"
+      sandbox="allow-scripts allow-same-origin allow-popups"
+      onError={() => setChartError(true)}
+    />
   );
 }
 
@@ -540,10 +537,10 @@ export default function SimulationPage() {
               </div>
               {selectedPrice && (
                 <div className="flex gap-4 mt-2 text-xs text-slate-500">
-                  <span>거래량 {formatNum(selectedPrice.volume)}</span>
-                  {selectedPrice.dayHigh > 0 && <span>고가 {formatNum(selectedPrice.dayHigh)}원</span>}
-                  {selectedPrice.dayLow > 0 && <span>저가 {formatNum(selectedPrice.dayLow)}원</span>}
-                  {selectedPrice.marketCap > 0 && <span>시총 {formatKRW(selectedPrice.marketCap)}</span>}
+                  {selectedPrice.volume != null && selectedPrice.volume > 0 && <span>거래량 {formatNum(selectedPrice.volume)}</span>}
+                  {selectedPrice.dayHigh != null && selectedPrice.dayHigh > 0 && <span>고가 {formatNum(selectedPrice.dayHigh)}원</span>}
+                  {selectedPrice.dayLow != null && selectedPrice.dayLow > 0 && <span>저가 {formatNum(selectedPrice.dayLow)}원</span>}
+                  {selectedPrice.marketCap != null && selectedPrice.marketCap > 0 && <span>시총 {formatKRW(selectedPrice.marketCap)}</span>}
                 </div>
               )}
             </div>
