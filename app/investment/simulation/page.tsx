@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
+import { createChart, CandlestickSeries, HistogramSeries, type IChartApi } from "lightweight-charts";
 import {
   ArrowLeft,
   TrendingUp,
@@ -89,90 +90,151 @@ function formatNum(n: number | null | undefined): string {
   return n.toLocaleString("ko-KR");
 }
 
-// ─── Price Detail Panel (replaces TradingView) ──────────────────────────────
+// ─── Candlestick Chart Component ─────────────────────────────────────────────
 
-function PriceDetailPanel({ ticker, price, etfInfo }: {
-  ticker: string;
-  price: StockPrice | undefined;
-  etfInfo: ETFRecommendation | undefined;
-}) {
-  if (!etfInfo) return null;
+interface CandleData {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
 
-  const currentPrice = price?.currentPrice ?? etfInfo.currentPrice;
-  const change = price?.change ?? 0;
-  const changePct = price?.changePercent ?? 0;
-  const isUp = change >= 0;
+function ETFChart({ ticker, range, interval }: { ticker: string; range: string; interval: string }) {
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!chartContainerRef.current) return;
+
+    // Clean up previous chart
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+    }
+
+    const container = chartContainerRef.current;
+    setLoading(true);
+    setError(false);
+
+    const chart = createChart(container, {
+      layout: {
+        background: { color: "rgb(15, 23, 42)" },
+        textColor: "rgb(148, 163, 184)",
+        fontSize: 11,
+      },
+      grid: {
+        vertLines: { color: "rgba(30, 41, 59, 0.5)" },
+        horzLines: { color: "rgba(30, 41, 59, 0.5)" },
+      },
+      crosshair: {
+        mode: 0,
+      },
+      rightPriceScale: {
+        borderColor: "rgb(51, 65, 85)",
+      },
+      timeScale: {
+        borderColor: "rgb(51, 65, 85)",
+        timeVisible: interval !== "1d" && interval !== "1wk" && interval !== "1mo",
+      },
+      width: container.clientWidth,
+      height: container.clientHeight,
+    });
+
+    chartRef.current = chart;
+
+    const candleSeries = chart.addSeries(CandlestickSeries, {
+      upColor: "#ef4444",
+      downColor: "#3b82f6",
+      borderUpColor: "#ef4444",
+      borderDownColor: "#3b82f6",
+      wickUpColor: "#ef4444",
+      wickDownColor: "#3b82f6",
+    });
+
+    const volumeSeries = chart.addSeries(HistogramSeries, {
+      priceFormat: { type: "volume" },
+      priceScaleId: "volume",
+    });
+
+    chart.priceScale("volume").applyOptions({
+      scaleMargins: { top: 0.85, bottom: 0 },
+    });
+
+    // Fetch data
+    fetch(`/api/stock-history?ticker=${ticker}&range=${range}&interval=${interval}`)
+      .then((res) => res.ok ? res.json() : Promise.reject())
+      .then((data) => {
+        if (!data.candles || data.candles.length === 0) {
+          setError(true);
+          setLoading(false);
+          return;
+        }
+        const candles: CandleData[] = data.candles;
+        candleSeries.setData(
+          candles.map((c) => ({
+            time: c.time as unknown as import("lightweight-charts").UTCTimestamp,
+            open: c.open,
+            high: c.high,
+            low: c.low,
+            close: c.close,
+          }))
+        );
+        volumeSeries.setData(
+          candles.map((c) => ({
+            time: c.time as unknown as import("lightweight-charts").UTCTimestamp,
+            value: c.volume,
+            color: c.close >= c.open ? "rgba(239,68,68,0.3)" : "rgba(59,130,246,0.3)",
+          }))
+        );
+        chart.timeScale().fitContent();
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+
+    // Resize handler
+    const handleResize = () => {
+      if (chartRef.current && container) {
+        chartRef.current.applyOptions({
+          width: container.clientWidth,
+          height: container.clientHeight,
+        });
+      }
+    };
+    const observer = new ResizeObserver(handleResize);
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+    };
+  }, [ticker, range, interval]);
 
   return (
-    <div className="h-full flex flex-col">
-      {/* Main price display */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
-        <p className="text-slate-500 text-sm mb-2">{etfInfo.nameKr}</p>
-        <p className="text-5xl font-bold text-white mb-3">
-          {formatNum(currentPrice)}<span className="text-2xl text-slate-400">원</span>
-        </p>
-        {price && (
-          <div className={`flex items-center gap-2 text-lg font-medium ${isUp ? "text-red-400" : "text-blue-400"}`}>
-            {isUp ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
-            <span>{isUp ? "+" : ""}{formatNum(change)}원</span>
-            <span className="text-sm">({isUp ? "+" : ""}{changePct?.toFixed(2) ?? "0.00"}%)</span>
-          </div>
-        )}
-      </div>
-
-      {/* Price bar visualization */}
-      {price && price.dayLow != null && price.dayHigh != null && price.dayHigh > price.dayLow && (
-        <div className="px-6 pb-4">
-          <div className="flex justify-between text-xs text-slate-500 mb-1">
-            <span>저가 {formatNum(price.dayLow)}</span>
-            <span>고가 {formatNum(price.dayHigh)}</span>
-          </div>
-          <div className="relative h-2 bg-slate-700 rounded-full overflow-hidden">
-            <div
-              className="absolute h-full bg-gradient-to-r from-blue-500 via-slate-400 to-red-500 rounded-full"
-              style={{ width: "100%" }}
-            />
-            <div
-              className="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full border-2 border-slate-900 shadow-lg"
-              style={{
-                left: `${Math.min(Math.max(((currentPrice - price.dayLow) / (price.dayHigh - price.dayLow)) * 100, 0), 100)}%`,
-                transform: "translate(-50%, -50%)",
-              }}
-            />
+    <div className="relative h-full w-full">
+      <div ref={chartContainerRef} className="h-full w-full" />
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
+          <div className="text-center">
+            <RefreshCw className="w-6 h-6 text-blue-400 animate-spin mx-auto mb-2" />
+            <p className="text-xs text-slate-500">차트 로딩 중...</p>
           </div>
         </div>
       )}
-
-      {/* Stats grid */}
-      <div className="grid grid-cols-2 gap-px bg-slate-800 border-t border-slate-800">
-        {[
-          { label: "전일 종가", value: price ? `${formatNum(price.previousClose)}원` : "-" },
-          { label: "거래량", value: price?.volume != null && price.volume > 0 ? formatNum(price.volume) : "-" },
-          { label: "리스크", value: etfInfo.riskLevel },
-          { label: "기대수익", value: etfInfo.expectedReturn },
-          { label: "카테고리", value: etfInfo.category },
-          { label: "비중", value: `${etfInfo.currentWeight}%` },
-        ].map(({ label, value }) => (
-          <div key={label} className="bg-slate-900 px-4 py-3">
-            <p className="text-[10px] text-slate-500">{label}</p>
-            <p className="text-sm text-white font-medium">{value}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Timeframes */}
-      <div className="border-t border-slate-800 p-4">
-        <p className="text-xs text-slate-500 mb-2">기간별 기대수익</p>
-        <div className="grid grid-cols-4 gap-2">
-          {etfInfo.timeframes.map((tf) => (
-            <div key={tf.label} className="bg-slate-800/50 rounded-lg p-2 text-center">
-              <p className="text-[10px] text-slate-500">{tf.label}</p>
-              <p className="text-xs font-bold text-emerald-400">{tf.expectedReturn}</p>
-              <p className="text-[10px] text-red-400/70">{tf.maxRisk}</p>
-            </div>
-          ))}
+      {error && !loading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
+          <p className="text-xs text-slate-500">차트 데이터를 불러올 수 없습니다</p>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -190,6 +252,7 @@ export default function SimulationPage() {
 
   // Selected ETF & chart
   const [selectedETF, setSelectedETF] = useState<string>(etfRecommendations[0]?.ticker || "");
+  const [chartRange, setChartRange] = useState<string>("3mo");
   const [prices, setPrices] = useState<Record<string, StockPrice>>({});
   const [priceLoading, setPriceLoading] = useState(false);
 
@@ -574,10 +637,54 @@ export default function SimulationPage() {
               )}
             </div>
 
-            {/* Price Detail Panel */}
-            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden" style={{ minHeight: "400px" }}>
-              <PriceDetailPanel ticker={selectedETF} price={selectedPrice} etfInfo={selectedETFInfo} />
+            {/* Chart Range Tabs */}
+            <div className="flex gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
+              {[
+                { label: "1주", range: "5d", interval: "15m" },
+                { label: "1개월", range: "1mo", interval: "1d" },
+                { label: "3개월", range: "3mo", interval: "1d" },
+                { label: "6개월", range: "6mo", interval: "1d" },
+                { label: "1년", range: "1y", interval: "1wk" },
+                { label: "3년", range: "3y", interval: "1wk" },
+              ].map((opt) => (
+                <button
+                  key={opt.range}
+                  onClick={() => setChartRange(opt.range)}
+                  className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    chartRange === opt.range ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
             </div>
+
+            {/* Candlestick Chart */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden" style={{ height: "420px" }}>
+              <ETFChart
+                ticker={selectedETF}
+                range={chartRange}
+                interval={
+                  chartRange === "5d" ? "15m" :
+                  chartRange === "1y" || chartRange === "3y" ? "1wk" : "1d"
+                }
+              />
+            </div>
+
+            {/* ETF Info Summary */}
+            {selectedETFInfo && (
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="grid grid-cols-4 gap-2">
+                  {selectedETFInfo.timeframes.map((tf) => (
+                    <div key={tf.label} className="bg-slate-800/50 rounded-lg p-2.5 text-center">
+                      <p className="text-[10px] text-slate-500">{tf.label} ({tf.period})</p>
+                      <p className="text-xs font-bold text-emerald-400">{tf.expectedReturn}</p>
+                      <p className="text-[10px] text-red-400/70">위험 {tf.maxRisk}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right: Trade Panel */}
