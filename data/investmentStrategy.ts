@@ -1,5 +1,3 @@
-import { issues } from "./issues";
-
 // ─── 업데이트 메타데이터 ────────────────────────────────────────────────────
 
 export const updateMeta = {
