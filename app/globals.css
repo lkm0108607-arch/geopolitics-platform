@@ -1,26 +1,145 @@
 @import "tailwindcss";
 
+/* ============================================================
+   GeoInsight Design System — Premium Financial Terminal Theme
+   배경: 딥 네이비  |  텍스트: 고대비 화이트  |  강조: 골드/블루
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Core backgrounds */
+  --bg-base:    #05091A;   /* 최하단 배경 */
+  --bg-surface: #0B1120;   /* 카드 배경 */
+  --bg-raised:  #111827;   /* 팝업/호버 */
+  --bg-muted:   #1A2438;   /* 뮤트 영역 */
+
+  /* Borders */
+  --border:       #1E2D45;
+  --border-hover: #2D4A6B;
+  --border-focus: #3B82F6;
+
+  /* Text — 고대비 설계 */
+  --text-primary:   #F0F6FF;  /* 헤드라인 */
+  --text-secondary: #B8C9E0;  /* 본문 */
+  --text-muted:     #647A9A;  /* 보조 */
+  --text-faint:     #3D5470;  /* 라벨 */
+
+  /* Semantic colors */
+  --color-gold:    #F59E0B;
+  --color-blue:    #60A5FA;
+  --color-green:   #34D399;
+  --color-red:     #F87171;
+  --color-orange:  #FB923C;
+  --color-purple:  #A78BFA;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-background: var(--bg-base);
+  --color-foreground: var(--text-primary);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+/* ── Base ─────────────────────────────────── */
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-family: var(--font-geist-sans), 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* ── Scrollbar ────────────────────────────── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-base); }
+::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-focus); }
+
+/* ── Typography ───────────────────────────── */
+h1 { font-size: 1.875rem; font-weight: 700; line-height: 1.25; color: var(--text-primary); }
+h2 { font-size: 1.25rem;  font-weight: 600; color: var(--text-primary); }
+h3 { font-size: 1rem;     font-weight: 600; color: var(--text-primary); }
+p  { color: var(--text-secondary); }
+
+/* ── Card system ──────────────────────────── */
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  transition: border-color 0.15s, background 0.15s;
+}
+.card:hover  { border-color: var(--border-hover); }
+.card-raised { background: var(--bg-raised); }
+
+/* ── Stat pill ────────────────────────────── */
+.stat-gold   { color: var(--color-gold);   background: rgba(245,158,11,.08); border: 1px solid rgba(245,158,11,.2); border-radius: 0.5rem; padding: 0.25rem 0.75rem; }
+.stat-blue   { color: var(--color-blue);   background: rgba(96,165,250,.08); border: 1px solid rgba(96,165,250,.2); border-radius: 0.5rem; padding: 0.25rem 0.75rem; }
+.stat-green  { color: var(--color-green);  background: rgba(52,211,153,.08); border: 1px solid rgba(52,211,153,.2); border-radius: 0.5rem; padding: 0.25rem 0.75rem; }
+.stat-red    { color: var(--color-red);    background: rgba(248,113,113,.08); border: 1px solid rgba(248,113,113,.2); border-radius: 0.5rem; padding: 0.25rem 0.75rem; }
+.stat-orange { color: var(--color-orange); background: rgba(251,146,60,.08);  border: 1px solid rgba(251,146,60,.2);  border-radius: 0.5rem; padding: 0.25rem 0.75rem; }
+
+/* ── Progress bar ─────────────────────────── */
+.progress-track {
+  background: var(--bg-muted);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+/* ── Badge ────────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid;
+}
+
+/* ── Ticker bar (news) ────────────────────── */
+.ticker-bar {
+  background: linear-gradient(90deg, var(--bg-surface) 0%, rgba(11,17,32,.95) 100%);
+  border-bottom: 1px solid var(--border);
+}
+
+/* ── Section divider ──────────────────────── */
+.section-divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.5rem 0;
+}
+
+/* ── Gradient accents ─────────────────────── */
+.gradient-gold {
+  background: linear-gradient(135deg, #F59E0B 0%, #FBBF24 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.gradient-blue {
+  background: linear-gradient(135deg, #3B82F6 0%, #60A5FA 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Live pulse dot ───────────────────────── */
+@keyframes livePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: .4; transform: scale(0.8); }
+}
+.live-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--color-green);
+  animation: livePulse 1.5s ease-in-out infinite;
+}
+
+/* ── Prediction match bar ─────────────────── */
+.match-hit     { background: var(--color-green); }
+.match-partial { background: var(--color-orange); }
+.match-miss    { background: var(--color-red); }
+.match-pending { background: var(--text-faint); }
