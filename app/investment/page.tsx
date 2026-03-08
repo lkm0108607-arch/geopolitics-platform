@@ -13,6 +13,8 @@ import {
   Zap,
   RefreshCw,
   Calendar,
+  Wallet,
+  ChevronRight,
 } from "lucide-react";
 import {
   etfRecommendations,
@@ -148,6 +150,28 @@ export default function InvestmentPage() {
           </div>
         </div>
       </div>
+
+      {/* ── 모의투자 배너 ── */}
+      <Link href="/investment/simulation" className="block mb-8 group">
+        <div className="bg-gradient-to-r from-emerald-900/40 to-blue-900/40 border border-emerald-700/40 rounded-2xl p-5 hover:border-emerald-500/50 transition-all">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-emerald-600/30 flex items-center justify-center">
+                <Wallet className="w-6 h-6 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-lg font-bold text-white group-hover:text-emerald-300 transition-colors">
+                  ETF 모의투자 시작하기
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  회원가입 시 1,000만원 모의투자금 지급 · 추천 ETF 한정 투자
+                </p>
+              </div>
+            </div>
+            <ChevronRight className="w-5 h-5 text-slate-500 group-hover:text-emerald-400 transition-colors" />
+          </div>
+        </div>
+      </Link>
 
       {/* ── 1. Danger Alert Banner ── */}
       {activeAlerts.length > 0 && (
@@ -398,11 +422,11 @@ export default function InvestmentPage() {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="text-lg font-bold text-white">{etf.ticker}</span>
+                      <span className="text-lg font-bold text-white">{etf.nameKr}</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full ${getCategoryStyle(etf.category)}`}>{etf.category}</span>
                     </div>
-                    <p className="text-sm text-slate-300">{etf.nameKr}</p>
-                    <p className="text-xs text-slate-500">{etf.name}</p>
+                    <p className="text-sm text-slate-400">{etf.name}</p>
+                    <p className="text-xs text-slate-500 font-mono">{etf.ticker}</p>
                   </div>
                   <div className="text-right">
                     <span className="text-lg font-bold text-emerald-400">{etf.currentWeight}%</span>

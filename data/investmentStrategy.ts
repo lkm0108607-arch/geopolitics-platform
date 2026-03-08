@@ -34,6 +34,7 @@ export interface ETFRecommendation {
   dangerSignals: string[];
   currentWeight: number;
   timeframes: TimeframeReturn[];
+  currentPrice: number; // 모의투자용 현재가 (원)
 }
 
 export interface InvestmentScenario {
@@ -95,6 +96,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "환헤지 비용 연 3% 이상 급증",
     ],
     currentWeight: 12,
+    currentPrice: 17250,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "+1~3%", maxRisk: "-3%", strategy: "현 보유분 유지. 금 가격 단기 조정 시 추가 매수 기회로 활용." },
       { label: "단기", period: "2~3개월", expectedReturn: "+3~7%", maxRisk: "-5%", strategy: "관세 발동(3/15) 전후 안전자산 수요 급증 기대. FOMC 결과에 따라 비중 조절." },
@@ -122,6 +124,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "기대인플레이션(BEI) 3% 돌파",
     ],
     currentWeight: 8,
+    currentPrice: 9450,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "+0~2%", maxRisk: "-3%", strategy: "FOMC(3/18~19) 결과 확인 전까지 소폭 보유. 매파 발언 시 단기 손실 가능." },
       { label: "단기", period: "2~3개월", expectedReturn: "+2~6%", maxRisk: "-5%", strategy: "경기둔화 신호 강화 시 금리 하락 기대. 관세 충격이 경기에 반영되는 시점." },
@@ -149,6 +152,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "원화 급격 강세 전환 시 환손실",
     ],
     currentWeight: 8,
+    currentPrice: 14200,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "+0~2%", maxRisk: "-4%", strategy: "배당 수령 일정 확인 후 보유. 시장 급락 시에도 배당이 하방 지지." },
       { label: "단기", period: "2~3개월", expectedReturn: "+1~4%", maxRisk: "-7%", strategy: "관세 충격에도 내수 기업 중심이라 상대적 방어력. 분기 배당 수령으로 안정적 수익." },
@@ -174,6 +178,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "한국 신용 리스크 급등(극단적 시나리오)",
     ],
     currentWeight: 10,
+    currentPrice: 105350,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "+0.25~0.3%", maxRisk: "-0.1%", strategy: "현금 대체 자산. 언제든 매도 가능한 유동성 확보 수단." },
       { label: "단기", period: "2~3개월", expectedReturn: "+0.6~0.9%", maxRisk: "-0.2%", strategy: "대기 자금 운용. 위험자산 진입 기회 포착 시 즉시 전환." },
@@ -200,6 +205,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "한국 재정 건전성 악화 우려",
     ],
     currentWeight: 5,
+    currentPrice: 104800,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "+0.2~0.5%", maxRisk: "-1.5%", strategy: "금리 방향성 불투명 구간. 소규모 보유로 관망." },
       { label: "단기", period: "2~3개월", expectedReturn: "+1~3%", maxRisk: "-3%", strategy: "한국은행 금리 결정에 따라 방향 결정. 인하 기대감 반영 시 수혜." },
@@ -229,6 +235,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "미국 기업 실적 2분기 연속 역성장",
     ],
     currentWeight: 8,
+    currentPrice: 18950,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-2~+3%", maxRisk: "-8%", strategy: "관세 발동(3/15) 전후 변동성 확대 예상. 신규 매수보다 기존 보유분 유지 중심." },
       { label: "단기", period: "2~3개월", expectedReturn: "-3~+5%", maxRisk: "-12%", strategy: "관세 영향 본격 반영 시기. 5% 이상 조정 시 분할 매수 시작. 실적 시즌 주시." },
@@ -257,6 +264,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "나스닥100 200일 이동평균선 이탈",
     ],
     currentWeight: 7,
+    currentPrice: 118500,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-3~+4%", maxRisk: "-10%", strategy: "AI 테마 모멘텀 지속 여부 주시. 단기 변동성 대비 소량 보유." },
       { label: "단기", period: "2~3개월", expectedReturn: "-5~+8%", maxRisk: "-15%", strategy: "실적 시즌 결과가 핵심. AI CAPEX 가이던스 확인 후 비중 결정." },
@@ -285,6 +293,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "반도체 재고 사이클 하강 전환",
     ],
     currentWeight: 5,
+    currentPrice: 14800,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-5~+8%", maxRisk: "-15%", strategy: "변동성 극심. 기존 보유분만 유지하고 신규 매수 자제. 대만 리스크 모니터링." },
       { label: "단기", period: "2~3개월", expectedReturn: "-8~+12%", maxRisk: "-20%", strategy: "엔비디아 실적 확인이 핵심. 실적 호조 시 단기 랠리, 미스 시 급락 가능." },
@@ -313,6 +322,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "한국 국가 신용등급 하향",
     ],
     currentWeight: 5,
+    currentPrice: 34750,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-3~+2%", maxRisk: "-8%", strategy: "관세 직격탄 구간. 신규 매수 보류. 코스피 2,300 이탈 시 오히려 매수 기회 탐색." },
       { label: "단기", period: "2~3개월", expectedReturn: "-5~+5%", maxRisk: "-12%", strategy: "관세 영향 본격 반영. 외국인 수급 전환 확인이 반등의 핵심 신호." },
@@ -341,6 +351,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "HBM 수요 둔화 신호",
     ],
     currentWeight: 3,
+    currentPrice: 8350,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-5~+5%", maxRisk: "-12%", strategy: "삼성전자·SK하이닉스 실적 발표 전후 변동성 극심. 기존 보유분 유지 위주." },
       { label: "단기", period: "2~3개월", expectedReturn: "-8~+10%", maxRisk: "-18%", strategy: "메모리 가격 추이와 AI 서버 수주 확인이 핵심. HBM 모멘텀 지속 시 수혜." },
@@ -369,6 +380,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "한국 배터리 기업 대규모 적자 전환",
     ],
     currentWeight: 3,
+    currentPrice: 5980,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-5~+3%", maxRisk: "-12%", strategy: "IRA 규정 변경 뉴스 모니터링. 악재 선반영 구간이라 추가 하락 제한적일 수 있으나 확인 필요." },
       { label: "단기", period: "2~3개월", expectedReturn: "-10~+8%", maxRisk: "-18%", strategy: "전기차 판매 데이터와 IRA 최종안 확정이 핵심. 수혜 확인 시 반등 가능." },
@@ -398,6 +410,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "플라자 합의 2.0 논의",
     ],
     currentWeight: 5,
+    currentPrice: 13480,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "+0.5~2%", maxRisk: "-2%", strategy: "관세 발동(3/15) 전후 원화 약세 가속 예상. 현 보유분 유지." },
       { label: "단기", period: "2~3개월", expectedReturn: "+1~4%", maxRisk: "-4%", strategy: "관세 영향으로 한국 수출 둔화 시 원화 약세 지속. 달러 헤지 유지." },
@@ -424,6 +437,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "한국은행 긴급 금리 인하로 코스피 V자 반등",
     ],
     currentWeight: 3,
+    currentPrice: 4520,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-3~+8%", maxRisk: "-8%", strategy: "관세 발동 전후 단기 헤지 적극 활용. 3/15 전후 2주간 보유 후 청산 검토." },
       { label: "단기", period: "2~3개월", expectedReturn: "-8~+12%", maxRisk: "-12%", strategy: "최대 4주 단위로 롤링. 장기 보유 절대 금지. 코스피 바닥 확인 후 즉시 청산." },
@@ -451,6 +465,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "콘탱고 구조 심화로 롤오버 비용 증가",
     ],
     currentWeight: 3,
+    currentPrice: 7150,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-3~+5%", maxRisk: "-8%", strategy: "중동 정세 모니터링. 호르무즈 해협 리스크 시 급등 가능. 이벤트 드리븐 전략." },
       { label: "단기", period: "2~3개월", expectedReturn: "-5~+10%", maxRisk: "-12%", strategy: "관세 발동 후 에너지 가격 영향 확인. 인플레이션 헤지 목적 보유." },
@@ -477,6 +492,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "경기침체로 수요 급감",
     ],
     currentWeight: 3,
+    currentPrice: 10850,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "+0~3%", maxRisk: "-4%", strategy: "관세 발동 후 농산물 가격 반응 확인. 보복 관세 영향 모니터링." },
       { label: "단기", period: "2~3개월", expectedReturn: "+1~5%", maxRisk: "-6%", strategy: "봄철 작황 전망과 관세 협상 결과가 핵심 변수. 식량 가격 인플레이션 헤지." },
@@ -505,6 +521,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "위안화 급락(달러 대비 8.0 이상)",
     ],
     currentWeight: 2,
+    currentPrice: 7950,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-5~+5%", maxRisk: "-12%", strategy: "미중 관세 동향에 극도로 민감. 관세 확대 시 급락, 완화 시 급등. 소량만 보유." },
       { label: "단기", period: "2~3개월", expectedReturn: "-10~+10%", maxRisk: "-18%", strategy: "중국 경기부양 정책과 전기차 판매 데이터 확인. 정책 수혜 확인 시 비중 확대." },
@@ -531,6 +548,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "미국 기업 실적 2분기 연속 역성장",
     ],
     currentWeight: 5,
+    currentPrice: 16200,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-2~+2%", maxRisk: "-7%", strategy: "관세 발동 전후 변동성 대비. 환리스크 없이 미국 시장 노출 유지." },
       { label: "단기", period: "2~3개월", expectedReturn: "-3~+4%", maxRisk: "-10%", strategy: "환율 방향 불확실 시 환헤지형 선호. 관세 영향 반영 후 방향 결정." },
@@ -557,6 +575,7 @@ export const etfRecommendations: ETFRecommendation[] = [
       "변동성 높은 횡보장에서 양방향 손실 누적",
     ],
     currentWeight: 1,
+    currentPrice: 2050,
     timeframes: [
       { label: "초단기", period: "1개월", expectedReturn: "-10~+20%", maxRisk: "-20%", strategy: "관세 발동(3/15) 직전~직후 1~2주 단기 헤지용. 즉시 청산 원칙." },
       { label: "단기", period: "2~3개월", expectedReturn: "비추천", maxRisk: "-40%+", strategy: "절대 비추천. 2배 복리 감가로 원금 급감. 단기 전술 헤지 외 사용 금지." },
