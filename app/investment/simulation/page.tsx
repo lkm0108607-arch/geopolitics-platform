@@ -88,18 +88,32 @@ function formatNum(n: number): string { return n.toLocaleString("ko-KR"); }
 // ─── TradingView Chart Component ─────────────────────────────────────────────
 
 function TradingViewChart({ ticker, interval }: { ticker: string; interval: string }) {
-  const containerId = `tv_chart_${ticker}`;
   const containerRef = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    containerRef.current.innerHTML = "";
+    if (!mounted || !containerRef.current) return;
+
+    // Clear previous widget
+    const container = containerRef.current;
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
+
+    // Create widget wrapper
+    const widgetDiv = document.createElement("div");
+    widgetDiv.className = "tradingview-widget-container__widget";
+    widgetDiv.style.height = "100%";
+    widgetDiv.style.width = "100%";
+    container.appendChild(widgetDiv);
 
     const script = document.createElement("script");
     script.src = "https://s.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
     script.async = true;
     script.type = "text/javascript";
-    script.innerHTML = JSON.stringify({
+    script.textContent = JSON.stringify({
       autosize: true,
       symbol: `KRX:${ticker}`,
       interval: interval,
@@ -120,23 +134,26 @@ function TradingViewChart({ ticker, interval }: { ticker: string; interval: stri
       calendar: false,
       support_host: "https://www.tradingview.com",
     });
-    containerRef.current.appendChild(script);
-  }, [ticker, interval]);
+    container.appendChild(script);
+
+    return () => {
+      while (container.firstChild) {
+        container.removeChild(container.firstChild);
+      }
+    };
+  }, [ticker, interval, mounted]);
+
+  if (!mounted) return <div className="flex items-center justify-center h-full text-slate-500 text-sm">차트 로딩 중...</div>;
 
   return (
-    <div className="tradingview-widget-container" style={{ height: "100%", width: "100%" }}>
-      <div
-        ref={containerRef}
-        className="tradingview-widget-container__widget"
-        style={{ height: "calc(100% - 32px)", width: "100%" }}
-      />
-    </div>
+    <div ref={containerRef} style={{ height: "100%", width: "100%" }} />
   );
 }
 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function SimulationPage() {
+  const [hydrated, setHydrated] = useState(false);
   const [users, setUsers] = useState<Record<string, SimUser>>({});
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -161,8 +178,9 @@ export default function SimulationPage() {
   // Mobile ETF dropdown
   const [showETFList, setShowETFList] = useState(false);
 
-  // Load user
+  // Hydration guard
   useEffect(() => {
+    setHydrated(true);
     const u = loadUsers();
     setUsers(u);
     const s = getSession();
@@ -299,6 +317,19 @@ export default function SimulationPage() {
   function setSharesByAmount(amount: number) {
     const price = getTradePrice(selectedETF);
     if (price > 0) setTradeShares(String(Math.floor(amount / price)));
+  }
+
+  // ─── Loading Screen ─────────────────────────────────────────────────────────
+
+  if (!hydrated) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Wallet className="w-12 h-12 text-emerald-400 mx-auto mb-3 animate-pulse" />
+          <p className="text-slate-400 text-sm">로딩 중...</p>
+        </div>
+      </div>
+    );
   }
 
   // ─── Login Screen ──────────────────────────────────────────────────────────
