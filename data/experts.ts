@@ -398,6 +398,50 @@ export const expertsFeatured: Expert[] = [
 
 export { expertsFeatured as experts };
 
+// ─── Extended experts (~10K) — loaded at build time ───
+import { expertsExtended } from "./expertsExtended";
+import { expertsExtended2 } from "./expertsExtended2";
+import { expertsExtended3 } from "./expertsExtended3";
+import { expertsExtended4 } from "./expertsExtended4";
+import { expertsExtended5 } from "./expertsExtended5";
+import { expertsExtended6 } from "./expertsExtended6";
+import { expertsExtended7 } from "./expertsExtended7";
+import { expertsExtended8 } from "./expertsExtended8";
+import { expertsExtended9 } from "./expertsExtended9";
+import { expertsExtended10 } from "./expertsExtended10";
+import { expertsExtended11 } from "./expertsExtended11";
+
+// ─── Pre-computed stats (includes ALL 110K+ experts) ───
+import { precomputedStats } from "./precomputedStats";
+
+let _cachedExperts: Expert[] | null = null;
+let _cachedTopExperts: Expert[] | null = null;
+
+/**
+ * 전체 전문가 목록 (featured + extended ~10K)
+ * NOTE: 100K generated experts are NOT loaded here to avoid build timeout.
+ * Use getExpertStats() for statistics that include the full 110K+ pool.
+ */
+export function getAllExperts(): Expert[] {
+  if (_cachedExperts) return _cachedExperts;
+  const seen = new Set<string>();
+  const result: Expert[] = [];
+  for (const e of [
+    ...expertsFeatured, ...expertsExtended,
+    ...expertsExtended2, ...expertsExtended3, ...expertsExtended4,
+    ...expertsExtended5, ...expertsExtended6, ...expertsExtended7,
+    ...expertsExtended8, ...expertsExtended9, ...expertsExtended10,
+    ...expertsExtended11,
+  ]) {
+    if (!seen.has(e.id)) {
+      seen.add(e.id);
+      result.push(e);
+    }
+  }
+  _cachedExperts = result;
+  return result;
+}
+
 export function getExpertById(id: string) {
   const all = getAllExperts();
   return all.find((e) => e.id === id);
@@ -407,21 +451,19 @@ export function getExpertsByDomain(domain: string) {
   return getAllExperts().filter((e) => e.domains.includes(domain as never));
 }
 
-// 전체 전문가 목록 (featured + extended, 중복 제거)
-import { expertsExtended } from "./expertsExtended";
-export function getAllExperts(): Expert[] {
-  const seen = new Set<string>();
-  const result: Expert[] = [];
-  for (const e of [...expertsFeatured, ...expertsExtended]) {
-    if (!seen.has(e.id)) {
-      seen.add(e.id);
-      result.push(e);
-    }
-  }
-  return result;
+/** 신뢰도 상위 전문가 (페이지 렌더링용 — ~10K 풀에서 추출) */
+export function getTopExperts(limit = 500): Expert[] {
+  if (_cachedTopExperts && _cachedTopExperts.length >= limit) return _cachedTopExperts.slice(0, limit);
+  _cachedTopExperts = [...getAllExperts()].sort((a, b) => b.credibilityScore - a.credibilityScore).slice(0, limit);
+  return _cachedTopExperts;
 }
 
-/** 총 전문가 수 */
+/** 총 전문가 수 (pre-computed: 110K+ 포함) */
 export function getExpertCount(): number {
-  return getAllExperts().length;
+  return precomputedStats.total;
+}
+
+/** 전문가 통계 (pre-computed: 110K+ 전체 포함, 빌드 타임 안전) */
+export function getExpertStats() {
+  return precomputedStats;
 }

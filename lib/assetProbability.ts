@@ -119,6 +119,7 @@ export function calculateAssetConsensus(
 
   // 신뢰도 상위 예측 (가중치 기준 정렬)
   const topPredictions = activePredictions
+    .filter((p) => expertMap.has(p.expertId))
     .map((p) => ({ pred: p, weight: getAssetExpertWeight(expertMap.get(p.expertId)!, asset.id) }))
     .filter((x) => x.weight > 0)
     .sort((a, b) => b.weight - a.weight)

@@ -296,20 +296,62 @@ export const assetPredictions: AssetPrediction[] = [
   },
 ];
 
+// ─── 대량 생성 예측 통합 ────────────────────────────────────────────────────
+import { generatedAssetPredictions } from "./assetPredictionsGenerated";
+
+const allAssetPredictions: AssetPrediction[] = [...assetPredictions, ...generatedAssetPredictions];
+
 // ─── 접근 함수 ──────────────────────────────────────────────────────────────
 
 export function getPredictionsForAsset(assetId: string): AssetPrediction[] {
-  return assetPredictions.filter((p) => p.assetId === assetId);
+  return allAssetPredictions.filter((p) => p.assetId === assetId);
 }
 
 export function getActivePredictionsForAsset(assetId: string): AssetPrediction[] {
-  return assetPredictions.filter((p) => p.assetId === assetId && p.result === "미결");
+  return allAssetPredictions.filter((p) => p.assetId === assetId && p.result === "미결");
 }
 
 export function getPredictionsByExpert(expertId: string): AssetPrediction[] {
-  return assetPredictions.filter((p) => p.expertId === expertId);
+  return allAssetPredictions.filter((p) => p.expertId === expertId);
 }
 
 export function getResolvedPredictions(): AssetPrediction[] {
-  return assetPredictions.filter((p) => p.result && p.result !== "미결");
+  return allAssetPredictions.filter((p) => p.result && p.result !== "미결");
+}
+
+export function getAllAssetPredictions(): AssetPrediction[] {
+  return allAssetPredictions;
+}
+
+/** 자산별 예측 통계 */
+export function getAssetPredictionStats(assetId: string) {
+  const preds = getPredictionsForAsset(assetId);
+  const active = preds.filter((p) => p.result === "미결");
+  const resolved = preds.filter((p) => p.result && p.result !== "미결");
+  const correct = resolved.filter((p) => p.result === "적중").length;
+  const partial = resolved.filter((p) => p.result === "부분적중").length;
+  const incorrect = resolved.filter((p) => p.result === "불일치").length;
+  const rate = resolved.length > 0 ? Math.round(((correct + partial * 0.5) / resolved.length) * 100) : 0;
+
+  // 방향별 집계
+  const bullish = active.filter((p) => p.direction === "상승").length;
+  const bearish = active.filter((p) => p.direction === "하락").length;
+  const neutral = active.filter((p) => p.direction === "보합").length;
+  const volatile = active.filter((p) => p.direction === "변동성확대").length;
+
+  return {
+    totalPredictions: preds.length,
+    activePredictions: active.length,
+    resolvedPredictions: resolved.length,
+    correct,
+    partial,
+    incorrect,
+    accuracyRate: rate,
+    bullish,
+    bearish,
+    neutral,
+    volatile,
+    bullishPct: active.length > 0 ? Math.round((bullish / active.length) * 100) : 0,
+    bearishPct: active.length > 0 ? Math.round((bearish / active.length) * 100) : 0,
+  };
 }

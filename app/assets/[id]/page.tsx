@@ -1,12 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, Activity, Users, Clock, ChevronRight, Star } from "lucide-react";
+import { ArrowLeft, TrendingUp, TrendingDown, Minus, Activity, Users, Clock, ChevronRight, Star, BarChart3, CheckCircle, XCircle, AlertTriangle, PieChart } from "lucide-react";
 import { assets, getAssetById } from "@/data/assets";
-import { getPredictionsForAsset, getActivePredictionsForAsset } from "@/data/assetPredictions";
-import { assetPredictions } from "@/data/assetPredictions";
+import { getPredictionsForAsset, getActivePredictionsForAsset, getAssetPredictionStats, getAllAssetPredictions } from "@/data/assetPredictions";
 import { getPatternsForAsset } from "@/data/patterns";
 import { getFactorsForAsset } from "@/data/factors";
-import { getAllExperts } from "@/data/experts";
+import { getTopExperts } from "@/data/experts";
 import { calculateAssetConsensus, calculateAssetAccuracy } from "@/lib/assetProbability";
 import { getCredibilityTier, getAccuracyGrade } from "@/lib/credibility";
 import ConsensusGauge from "@/components/ConsensusGauge";
@@ -32,13 +31,15 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
   const asset = getAssetById(id);
   if (!asset) return notFound();
 
-  const allExperts = getAllExperts();
-  const expertMap = new Map(allExperts.map((e) => [e.id, e]));
+  const topExperts = getTopExperts(500);
+  const expertMap = new Map(topExperts.map((e) => [e.id, e]));
   const predictions = getPredictionsForAsset(id);
   const activePredictions = getActivePredictionsForAsset(id);
   const resolvedPredictions = predictions.filter((p) => p.result && p.result !== "미결");
-  const consensus = calculateAssetConsensus(asset, assetPredictions, allExperts);
-  const accuracy = calculateAssetAccuracy(id, assetPredictions);
+  const allPreds = getAllAssetPredictions();
+  const consensus = calculateAssetConsensus(asset, allPreds, topExperts);
+  const accuracy = calculateAssetAccuracy(id, allPreds);
+  const pStats = getAssetPredictionStats(id);
   const patterns = getPatternsForAsset(id);
   const relatedFactors = getFactorsForAsset(id);
 
@@ -70,18 +71,39 @@ export default async function AssetDetailPage({ params }: { params: Promise<{ id
         {/* 컨센서스 게이지 */}
         <ConsensusGauge consensus={consensus} size="lg" />
 
-        {/* 적중률 표시 */}
-        {accuracy.total > 0 && (
-          <div className="mt-4 pt-4 border-t border-slate-800 flex items-center gap-4 text-sm">
-            <span className="text-slate-400">과거 예측 적중률:</span>
-            <span className={`font-bold ${accuracy.rate >= 70 ? "text-emerald-400" : accuracy.rate >= 50 ? "text-yellow-400" : "text-red-400"}`}>
-              {accuracy.rate}%
-            </span>
-            <span className="text-xs text-slate-500">
-              ({accuracy.correct}건 적중 · {accuracy.partial}건 부분적중 · {accuracy.incorrect}건 불일치)
-            </span>
+        {/* 예측 통계 대시보드 */}
+        <div className="mt-4 pt-4 border-t border-slate-800">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <div className="text-center">
+              <p className="text-xs text-slate-500">총 예측</p>
+              <p className="text-lg font-bold text-white">{pStats.totalPredictions}건</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-500">검증 완료</p>
+              <p className="text-lg font-bold text-white">{pStats.resolvedPredictions}건</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-500">적중률</p>
+              <p className={`text-lg font-bold ${pStats.accuracyRate >= 60 ? "text-emerald-400" : "text-yellow-400"}`}>
+                {pStats.accuracyRate}%
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-500">상승 예측</p>
+              <p className="text-lg font-bold text-red-400">{pStats.bullish}명 ({pStats.bullishPct}%)</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-500">하락 예측</p>
+              <p className="text-lg font-bold text-blue-400">{pStats.bearish}명 ({pStats.bearishPct}%)</p>
+            </div>
+            <div className="text-center">
+              <p className="text-xs text-slate-500">적중/부분/불일치</p>
+              <p className="text-sm font-bold">
+                <span className="text-emerald-400">{pStats.correct}</span> / <span className="text-yellow-400">{pStats.partial}</span> / <span className="text-red-400">{pStats.incorrect}</span>
+              </p>
+            </div>
           </div>
-        )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

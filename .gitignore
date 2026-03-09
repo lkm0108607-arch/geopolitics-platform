@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+.env*.local
+
+# generated expert data (100K files, ~79MB - not needed for build)
+data/expertsGen_*.ts
+data/expertsGenIndex.ts
