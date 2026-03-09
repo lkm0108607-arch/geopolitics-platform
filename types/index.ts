@@ -1,21 +1,34 @@
 export type ExpertDomain =
-  | "미중관계"
-  | "러우전쟁"
-  | "중동"
-  | "국제법"
-  | "에너지"
-  | "군사안보"
-  | "경제안보"
-  | "핵비확산"
-  | "한반도"
-  | "대만해협"
-  | "글로벌공급망"
+  // ── 투자 핵심 도메인 ──
   | "금리통화정책"
   | "거시경제"
   | "한국경제"
   | "국제금융"
+  | "주식시장"
+  | "채권"
+  | "외환"
+  | "원자재"
+  | "가상자산"
+  | "AI기술"
+  | "반도체"
   | "부동산"
-  | "재정정책";
+  | "재정정책"
+  | "에너지"
+  | "헤지펀드"
+  | "사모투자"
+  // ── 지정학적 투자 리스크 ──
+  | "경제안보"
+  | "글로벌공급망"
+  | "미중관계"
+  | "한반도"
+  | "지정학리스크"
+  // ── 호환성 유지 (레거시) ──
+  | "러우전쟁"
+  | "중동"
+  | "국제법"
+  | "군사안보"
+  | "핵비확산"
+  | "대만해협";
 
 export type ExpertBackground =
   | "교수"
@@ -211,6 +224,7 @@ export interface WeeklyPrediction {
   rationale: string;           // 예측 근거
   result?: "적중" | "부분적중" | "불일치" | "미결";
   actualOutcome?: string;      // 실제 결과 (주간 종료 후 기입)
+  supportingExperts?: string[];  // 해당 예측을 지지하는 전문가 ID 목록
 }
 
 export interface WeeklyReport {
@@ -266,6 +280,101 @@ export interface WeeklyAccuracy {
 export interface IssueAccuracy {
   issueId: string;
   issueTitle: string;
+  predictions: number;
+  correct: number;
+  partial: number;
+  incorrect: number;
+  accuracyRate: number;
+}
+
+// ─── 자산 예측 시스템 (투자자 중심 재구성) ──────────────────────────────────
+
+export type AssetCategory = "금리" | "환율" | "원자재" | "지수";
+
+export type PredictionDirection = "상승" | "하락" | "보합" | "변동성확대";
+
+export type PredictionTimeframe = "1주" | "1개월" | "3개월" | "6개월";
+
+export interface Asset {
+  id: string;
+  name: string;
+  nameEn: string;
+  category: AssetCategory;
+  unit: string;                          // "%", "원/달러", "달러/온스" 등
+  currentValue: number;
+  previousValue: number;
+  changePercent: number;
+  description: string;
+  relatedFactorIds: string[];            // Factor와 연결
+  relatedETFTickers?: string[];          // koreanETFs와 연결
+  isActive: boolean;
+  updatedAt: string;
+}
+
+export interface AssetPrediction {
+  id: string;
+  assetId: string;
+  expertId: string;
+  direction: PredictionDirection;
+  confidence: number;                    // 0-100
+  timeframe: PredictionTimeframe;
+  targetRange?: { low: number; high: number };
+  currentAtPrediction: number;           // 예측 시점 현재 가격
+  rationale: string;
+  keyAssumptions: string[];
+  publishedAt: string;
+  result?: "적중" | "부분적중" | "불일치" | "미결";
+  actualOutcome?: string;
+}
+
+export interface HistoricalPattern {
+  id: string;
+  assetId: string;
+  title: string;
+  period: string;                        // "2022.03 - 2022.06"
+  description: string;
+  similarity: number;                    // 현재와 유사도 (0-100)
+  outcome: string;                       // 당시 결과
+  assetMovement: string;                 // 자산 실제 움직임
+  keyDifferences: string[];              // 현재와 다른 점
+}
+
+export type FactorCategory = "정책" | "지정학" | "경제지표" | "시장심리" | "구조적변화";
+
+export interface Factor {
+  id: string;
+  title: string;
+  category: FactorCategory;
+  summary: string;
+  impactedAssetIds: string[];
+  impactDirection: Record<string, AssetDirection>;    // assetId → 방향
+  impactMagnitude: Record<string, ImpactMagnitude>;   // assetId → 강도
+  probability: number;
+  probTrend: "상승" | "하락" | "유지";
+  relatedExpertIds: string[];
+  signals: Signal[];
+  timeline: TimelineEvent[];
+  isActive: boolean;
+  updatedAt: string;
+  legacyIssueId?: string;               // 기존 Issue와 연결 (마이그레이션 브릿지)
+}
+
+// ─── 자산 컨센서스 결과 ─────────────────────────────────────────────────────
+
+export interface AssetConsensusResult {
+  assetId: string;
+  direction: PredictionDirection;        // 가중 컨센서스 방향
+  confidence: number;                    // 컨센서스 신뢰도 (0-100)
+  bullCount: number;                     // 상승 예측 전문가 수
+  bearCount: number;                     // 하락 예측 전문가 수
+  neutralCount: number;                  // 보합 예측 전문가 수
+  avgExpertCredibility: number;          // 참여 전문가 평균 신뢰도
+  topPredictions: AssetPrediction[];     // 신뢰도 상위 예측들
+}
+
+export interface AssetAccuracy {
+  assetId: string;
+  assetName: string;
   predictions: number;
   correct: number;
   partial: number;

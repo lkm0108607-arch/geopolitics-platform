@@ -2,19 +2,18 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Globe, Users, Map, BarChart3, Zap, Award, Menu, X, Calendar, Target, TrendingUp } from "lucide-react";
+import { Globe, Users, BarChart3, Award, Menu, X, Calendar, Target, TrendingUp, Activity, DollarSign } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/", label: "홈", icon: Globe },
+  { href: "/assets", label: "자산전망", icon: TrendingUp },
   { href: "/weekly", label: "주간예측", icon: Calendar },
-  { href: "/issues", label: "이슈", icon: Map },
+  { href: "/factors", label: "변동요인", icon: Activity },
   { href: "/experts", label: "전문가", icon: Users },
-  { href: "/scenarios", label: "시나리오", icon: BarChart3 },
-  { href: "/scorecard", label: "AI성적표", icon: Target },
+  { href: "/scorecard", label: "성적표", icon: Target },
   { href: "/ranking", label: "랭킹", icon: Award },
-  { href: "/investment", label: "투자전략", icon: TrendingUp },
-  { href: "/briefing", label: "AI 브리핑", icon: Zap },
+  { href: "/investment", label: "투자전략", icon: DollarSign },
 ];
 
 export default function Navbar() {

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "GeoInsight — 국제정세 판단 지원 플랫폼",
-  description: "전 세계 국제정세 전문가들의 분석을 모아, 신뢰도와 근거 중심으로 비교해보는 국제정세 판단 지원 플랫폼",
+  title: "GeoInsight — 전문가 신뢰도 기반 투자 예측 플랫폼",
+  description: "과거 적중률이 검증된 전문가들의 예측을 신뢰도 가중 방식으로 종합하여 금리·환율·원자재·지수의 방향을 예측합니다",
 };
 
 export default function RootLayout({

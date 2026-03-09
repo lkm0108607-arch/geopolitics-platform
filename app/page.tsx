@@ -1,31 +1,39 @@
 import Link from "next/link";
-import { TrendingUp, AlertTriangle, Users, BarChart3, Zap, ChevronRight, Activity, Calendar, Target, Clock } from "lucide-react";
-import { issues } from "@/data/issues";
+import { TrendingUp, TrendingDown, Minus, Users, Activity, Zap, ChevronRight, Calendar, Target, Clock, BarChart3 } from "lucide-react";
+import { assets } from "@/data/assets";
+import { assetPredictions } from "@/data/assetPredictions";
+import { factors } from "@/data/factors";
 import { getAllExperts } from "@/data/experts";
 import { getCurrentWeekReport } from "@/data/weeklyPredictions";
 import { computeAIScore, getAccuracyGrade } from "@/data/aiScorecard";
 import { formatWeekRange } from "@/data/meta";
-import IssueCard from "@/components/IssueCard";
+import { calculateAssetConsensus } from "@/lib/assetProbability";
 import ExpertCard from "@/components/ExpertCard";
-import { getRiskColor, getRiskLabel } from "@/components/ui/RiskGauge";
+import { formatValue, getDirectionInfo, getChangeColor } from "@/components/AssetCard";
+
+export const revalidate = 43200;
 
 export default function HomePage() {
   const allExperts = getAllExperts();
-  const topRisk = [...issues].sort((a, b) => b.probability - a.probability).slice(0, 5);
-  const risingIssues = issues.filter((i) => i.probTrend === "상승");
-  const topExperts = [...allExperts].sort((a, b) => b.credibilityScore - a.credibilityScore).slice(0, 3);
   const currentWeek = getCurrentWeekReport();
   const aiScore = computeAIScore();
   const aiGrade = getAccuracyGrade(aiScore.accuracyRate);
+  const topExperts = [...allExperts].sort((a, b) => b.credibilityScore - a.credibilityScore).slice(0, 3);
 
-  const divergingIssues = issues.filter((i) => {
-    const scenarios = i.scenarios;
-    if (scenarios.length < 2) return false;
-    const probs = scenarios.map((s) => s.probability);
-    const max = Math.max(...probs);
-    const min = Math.min(...probs);
-    return max - min < 40;
-  });
+  // 자산별 컨센서스 계산
+  const assetConsensus = assets.map((a) => ({
+    asset: a,
+    consensus: calculateAssetConsensus(a, assetPredictions, allExperts),
+  }));
+
+  // 최근 시그널 (factors에서)
+  const recentSignals = factors
+    .flatMap((f) => f.signals.map((s) => ({ ...s, factorTitle: f.title, factorId: f.id })))
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 6);
+
+  // 확률 상승 중인 요인
+  const risingFactors = factors.filter((f) => f.probTrend === "상승" && f.isActive).slice(0, 4);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -33,23 +41,24 @@ export default function HomePage() {
       <div className="mb-10">
         <div className="flex items-center gap-2 text-blue-400 text-sm font-medium mb-3">
           <Activity className="w-4 h-4 animate-pulse" />
-          <span>실시간 국제정세 분석</span>
+          <span>전문가 적중률 기반 투자 예측</span>
         </div>
         <h1 className="text-3xl md:text-4xl font-bold text-white mb-3 leading-tight">
-          전망을 비교하고,<br className="md:hidden" /> 판단하세요
+          오늘의 투자 시그널
         </h1>
         <p className="text-slate-400 text-base max-w-2xl">
-          전 세계 국제정세 전문가들의 분석을 모아, 신뢰도와 근거 중심으로 비교해보는 국제정세 판단 지원 플랫폼
+          과거 적중률이 검증된 전문가들의 예측을 신뢰도 가중 방식으로 종합합니다.
+          금리·환율·원자재·지수의 방향성을 데이터로 판단하세요.
         </p>
       </div>
 
       {/* Quick stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-10">
         {[
-          { label: "활성 이슈", value: issues.filter((i) => i.isActive).length, icon: AlertTriangle, color: "text-orange-400" },
+          { label: "추적 자산", value: assets.length, icon: BarChart3, color: "text-purple-400" },
           { label: "등록 전문가", value: allExperts.length, icon: Users, color: "text-blue-400" },
-          { label: "총 시나리오", value: issues.reduce((sum, i) => sum + i.scenarios.length, 0), icon: BarChart3, color: "text-purple-400" },
-          { label: "확률 상승", value: risingIssues.length, icon: TrendingUp, color: "text-red-400" },
+          { label: "활성 예측", value: assetPredictions.filter((p) => p.result === "미결").length, icon: TrendingUp, color: "text-orange-400" },
+          { label: "변동 요인", value: factors.filter((f) => f.isActive).length, icon: Activity, color: "text-yellow-400" },
           { label: "AI 적중률", value: `${aiScore.accuracyRate}%`, icon: Target, color: aiGrade.color },
           { label: "총 예측", value: aiScore.totalPredictions, icon: Calendar, color: "text-cyan-400" },
         ].map(({ label, value, icon: Icon, color }) => (
@@ -100,90 +109,85 @@ export default function HomePage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          {/* Top probability issues */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 text-red-400" />
-                발생 확률 Top 5
-              </h2>
-              <Link href="/issues" className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1">
-                전체보기 <ChevronRight className="w-4 h-4" />
-              </Link>
-            </div>
-            <div className="space-y-3">
-              {topRisk.map((issue, idx) => (
-                <Link key={issue.id} href={`/issues/${issue.id}`} className="block group">
-                  <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-600 transition-all">
-                    <div className="flex items-center gap-4">
-                      <span className="text-2xl font-bold text-slate-700 w-8 flex-shrink-0">
-                        {String(idx + 1).padStart(2, "0")}
-                      </span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-xs text-slate-500">{issue.region}</span>
-                          {issue.probTrend === "상승" && (
-                            <TrendingUp className="w-3 h-3 text-red-400" />
-                          )}
-                        </div>
-                        <p className="font-semibold text-white group-hover:text-blue-300 transition-colors text-sm">
-                          {issue.title}
-                        </p>
-                      </div>
-                      <div className="flex-shrink-0 text-right">
-                        <span className={`text-xl font-bold ${getRiskColor(issue.probability)}`}>
-                          {issue.probability}%
-                        </span>
-                        <p className={`text-xs ${getRiskColor(issue.probability)}`}>
-                          {getRiskLabel(issue.probability)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="mt-2 ml-12 bg-slate-800 rounded-full h-1.5">
-                      <div
-                        className={`h-1.5 rounded-full ${
-                          issue.probability >= 80 ? "bg-red-500" :
-                          issue.probability >= 60 ? "bg-orange-500" :
-                          issue.probability >= 40 ? "bg-yellow-500" : "bg-green-500"
-                        }`}
-                        style={{ width: `${issue.probability}%` }}
-                      />
-                    </div>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </section>
-
-          {/* Diverging issues */}
+          {/* 주요 자산 전망 */}
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
                 <BarChart3 className="w-5 h-5 text-purple-400" />
-                전문가 견해가 갈리는 이슈
+                주요 자산 전망
               </h2>
+              <Link href="/assets" className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                전체보기 <ChevronRight className="w-4 h-4" />
+              </Link>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {divergingIssues.slice(0, 4).map((issue) => (
-                <IssueCard key={issue.id} issue={issue} compact />
-              ))}
+            <div className="space-y-2">
+              {assetConsensus.map(({ asset, consensus }) => {
+                const dir = getDirectionInfo(consensus.direction);
+                const DirIcon = dir.icon;
+                return (
+                  <Link key={asset.id} href={`/assets/${asset.id}`} className="block group">
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-600 transition-all">
+                      <div className="flex items-center gap-4">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-xs text-slate-500">{asset.category}</span>
+                            <span className={`text-xs ${getChangeColor(asset.changePercent)}`}>
+                              {asset.changePercent > 0 ? "+" : ""}{asset.changePercent.toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="font-semibold text-white group-hover:text-blue-300 transition-colors text-sm">
+                            {asset.name}
+                          </p>
+                        </div>
+                        <div className="text-right flex-shrink-0 mr-4">
+                          <p className="text-lg font-bold text-white">{formatValue(asset.currentValue, asset.unit)}</p>
+                        </div>
+                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${dir.bg} ${dir.border} flex-shrink-0`}>
+                          <DirIcon className={`w-4 h-4 ${dir.color}`} />
+                          <span className={`text-sm font-bold ${dir.color}`}>{dir.label}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </Link>
+                );
+              })}
             </div>
           </section>
 
-          {/* Rising probability */}
-          <section>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <TrendingUp className="w-5 h-5 text-red-400" />
-                이번 주 확률 상승 이슈
-              </h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {risingIssues.map((issue) => (
-                <IssueCard key={issue.id} issue={issue} compact />
-              ))}
-            </div>
-          </section>
+          {/* 주목 요인 (확률 상승 중) */}
+          {risingFactors.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-red-400" />
+                  영향력 상승 중인 요인
+                </h2>
+                <Link href="/factors" className="text-sm text-blue-400 hover:text-blue-300 flex items-center gap-1">
+                  전체보기 <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {risingFactors.map((f) => (
+                  <Link key={f.id} href={`/factors/${f.id}`} className="block group">
+                    <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 hover:border-slate-600 transition-all">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs text-slate-500 bg-slate-800 px-2 py-0.5 rounded-full">{f.category}</span>
+                        <span className="flex items-center gap-1 text-xs font-medium text-red-400">
+                          <TrendingUp className="w-3 h-3" /> 상승
+                        </span>
+                      </div>
+                      <p className="font-semibold text-white text-sm group-hover:text-blue-300 transition-colors">
+                        {f.title}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        영향 자산 {f.impactedAssetIds.length}개
+                      </p>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Right sidebar */}
@@ -229,67 +233,46 @@ export default function HomePage() {
             </div>
           </Link>
 
-          {/* AI Briefing CTA */}
-          <Link href="/briefing" className="block">
-            <div className="bg-gradient-to-br from-blue-900/50 to-purple-900/50 border border-blue-700/40 rounded-xl p-5 hover:border-blue-500/60 transition-all cursor-pointer">
-              <div className="flex items-center gap-2 mb-3">
-                <Zap className="w-5 h-5 text-blue-400" />
-                <span className="font-semibold text-white">AI 브리핑</span>
-              </div>
-              <p className="text-sm text-slate-300 mb-3">
-                오늘의 국제정세를 3줄로 요약받고, 전문가별 견해 차이를 확인하세요.
-              </p>
-              <span className="text-sm text-blue-400 font-medium flex items-center gap-1">
-                브리핑 시작하기 <ChevronRight className="w-4 h-4" />
-              </span>
+          {/* Recent signals */}
+          <section>
+            <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-yellow-400" />
+              최근 시그널
+            </h2>
+            <div className="space-y-2">
+              {recentSignals.map((signal) => (
+                <Link key={signal.id} href={`/factors/${signal.factorId}`} className="block group">
+                  <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 hover:border-slate-600 transition-colors">
+                    <div className="flex items-start gap-2">
+                      <span className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
+                        signal.type === "경고" ? "bg-red-400" :
+                        signal.type === "긍정" ? "bg-green-400" : "bg-yellow-400"
+                      }`} />
+                      <div>
+                        <p className="text-xs font-medium text-white leading-snug group-hover:text-blue-300 transition-colors">
+                          {signal.title}
+                        </p>
+                        <p className="text-xs text-slate-500 mt-0.5">{signal.factorTitle} · {signal.date}</p>
+                      </div>
+                    </div>
+                  </div>
+                </Link>
+              ))}
             </div>
-          </Link>
+          </section>
 
-          {/* Daily update indicator */}
+          {/* Daily update */}
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
             <div className="flex items-center gap-2 mb-2">
               <Clock className="w-4 h-4 text-cyan-400" />
               <span className="text-sm font-semibold text-white">매일 업데이트</span>
               <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
             </div>
-            <p className="text-xs text-slate-400">
-              마지막 갱신: 2026년 3월 8일
-            </p>
+            <p className="text-xs text-slate-400">마지막 갱신: 2026년 3월 8일</p>
             <p className="text-xs text-slate-500 mt-1">
-              매일 자동으로 최신 뉴스와 전문가 분석이 업데이트됩니다.
-              주간 예측은 매주 월요일에 발행됩니다.
+              매일 자동으로 최신 시장 데이터와 전문가 분석이 업데이트됩니다.
             </p>
           </div>
-
-          {/* Recent signals */}
-          <section>
-            <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2">
-              <Activity className="w-4 h-4 text-yellow-400" />
-              최근 판세 전환 신호
-            </h2>
-            <div className="space-y-2">
-              {issues
-                .flatMap((i) => i.signals.map((s) => ({ ...s, issueTitle: i.title })))
-                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-                .slice(0, 5)
-                .map((signal) => (
-                  <div key={signal.id} className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                    <div className="flex items-start gap-2">
-                      <span
-                        className={`mt-0.5 w-2 h-2 rounded-full flex-shrink-0 ${
-                          signal.type === "경고" ? "bg-red-400" :
-                          signal.type === "긍정" ? "bg-green-400" : "bg-yellow-400"
-                        }`}
-                      />
-                      <div>
-                        <p className="text-xs font-medium text-white leading-snug">{signal.title}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{signal.issueTitle} · {signal.date}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </section>
         </div>
       </div>
     </div>
