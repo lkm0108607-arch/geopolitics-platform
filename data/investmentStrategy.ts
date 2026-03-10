@@ -954,6 +954,23 @@ export function getPortfolioAllocation(): {
   });
 }
 
+// 종목번호를 종목명으로 변환하는 헬퍼
+export function replaceTickerWithName(text: string): string {
+  for (const etf of etfRecommendations) {
+    // "133690(나스닥)" → "타이거 미국 나스닥100 ETF" 형태로 변환
+    const patternWithParens = new RegExp(`${etf.ticker}\\([^)]*\\)`, "g");
+    text = text.replace(patternWithParens, etf.nameKr);
+    // 단독 종목번호도 변환
+    const patternAlone = new RegExp(`(?<![\\d(])${etf.ticker}(?![\\d)])`, "g");
+    text = text.replace(patternAlone, etf.nameKr);
+  }
+  return text;
+}
+
+export function getETFNameByTicker(ticker: string): string {
+  return etfRecommendations.find((e) => e.ticker === ticker)?.nameKr || ticker;
+}
+
 export function getNextUpdateDate(): string {
   return updateMeta.nextUpdate;
 }

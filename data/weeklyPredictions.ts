@@ -1,4 +1,41 @@
 import { WeeklyReport, WeeklyPrediction, WeeklyNewsItem } from "@/types";
+import { getAllExperts } from "@/data/experts";
+
+// 이슈 ID → 전문 분야 매핑
+const issueDomainMap: Record<string, string[]> = {
+  "us-tariff-war": ["미중관계", "경제안보", "글로벌공급망"],
+  "russia-ukraine": ["러우전쟁", "군사안보"],
+  "north-korea": ["한반도", "핵비확산", "군사안보"],
+  "us-china-taiwan": ["대만해협", "미중관계", "군사안보"],
+  "us-fed-rates": ["금리통화정책", "거시경제", "경제안보"],
+  "global-recession-risk": ["거시경제", "경제안보", "국제금융"],
+  "us-china-trade": ["미중관계", "경제안보", "글로벌공급망"],
+  "korea-economy": ["한국경제", "거시경제"],
+  "middle-east": ["중동", "에너지", "군사안보"],
+  "energy-crisis": ["에너지", "글로벌공급망"],
+};
+
+// 각 주간 예측에 관련 전문가를 매칭하는 함수
+function getExpertsForIssue(issueId: string, count: number = 5): string[] {
+  const domains = issueDomainMap[issueId] || [];
+  if (domains.length === 0) return [];
+  const experts = getAllExperts()
+    .filter((e) => e.domains.some((d) => domains.includes(d)))
+    .sort((a, b) => b.credibilityScore - a.credibilityScore)
+    .slice(0, count);
+  return experts.map((e) => e.id);
+}
+
+// 주간 보고서에 전문가 매핑 적용
+export function getWeeklyReportsWithExperts(): WeeklyReport[] {
+  return weeklyReports.map((report) => ({
+    ...report,
+    predictions: report.predictions.map((pred) => ({
+      ...pred,
+      supportingExperts: pred.supportingExperts || getExpertsForIssue(pred.issueId, 5),
+    })),
+  }));
+}
 
 export const weeklyReports: WeeklyReport[] = [
   // ── Week 2 (Jan 5–11, 2026) ──────────────────────────────────────────

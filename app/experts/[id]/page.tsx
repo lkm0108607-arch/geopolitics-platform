@@ -1,11 +1,16 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, XCircle, Clock, TrendingUp, AlertTriangle } from "lucide-react";
+import { ArrowLeft, CheckCircle, XCircle, Clock, TrendingUp, AlertTriangle, Brain, ArrowRight, BarChart3, Wallet, ThumbsUp, ThumbsDown } from "lucide-react";
 import { getExpertById, experts } from "@/data/experts";
 import { issues } from "@/data/issues";
+import { getCurrentCycle, getAllCycleResults } from "@/data/aiPredictionCycles";
+import { assets } from "@/data/assets";
 import { getCredibilityTier, hasBiasWarning, calculateIssueCredibility } from "@/lib/credibility";
 import Tag from "@/components/ui/Tag";
 import CredibilityBreakdown from "@/components/CredibilityBreakdown";
+
+// 12시간마다 자동 업데이트
+export const revalidate = 43200;
 
 export function generateStaticParams() {
   return experts.map((e) => ({ id: e.id }));
@@ -54,6 +59,21 @@ export default async function ExpertDetailPage({
         issueAdjustedScore: calculateIssueCredibility(expert, i.tags),
       }))
   );
+
+  // AI 예측 사이클 연동
+  const cycle = getCurrentCycle();
+  const allResults = getAllCycleResults();
+  const expertPredictions = cycle.predictions.filter(
+    (p) => p.supportingExpertIds.includes(expert.id) || p.opposingExpertIds.includes(expert.id)
+  );
+
+  // 과거 사이클에서 이 전문가가 참여한 결과 수
+  const expertCycleResults = allResults.filter((r) => {
+    // Find the prediction in past cycles that references this expert
+    return r.result !== "미결";
+  });
+  const expertWeight = expert.credibilityScore >= 85 ? "높음" : expert.credibilityScore >= 70 ? "중간" : "낮음";
+  const weightColor = expert.credibilityScore >= 85 ? "text-emerald-400" : expert.credibilityScore >= 70 ? "text-blue-400" : "text-yellow-400";
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-8">
@@ -237,7 +257,7 @@ export default async function ExpertDetailPage({
 
       {/* 관련 이슈 */}
       {relatedIssues.length > 0 && (
-        <section>
+        <section className="mb-6">
           <h2 className="text-base font-bold text-white mb-3">관련 이슈</h2>
           <div className="flex flex-wrap gap-2">
             {relatedIssues.map((issue) => (
@@ -250,6 +270,118 @@ export default async function ExpertDetailPage({
           </div>
         </section>
       )}
+
+      {/* AI 예측 사이클 참여 */}
+      <section className="mb-6">
+        <div className="bg-gradient-to-r from-blue-950/50 to-purple-950/30 border border-blue-800/40 rounded-2xl p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Brain className="w-5 h-5 text-blue-400" />
+            <h2 className="text-base font-bold text-white">AI 예측 사이클 참여</h2>
+            <span className="text-xs bg-blue-900/40 text-blue-300 px-2 py-0.5 rounded-full border border-blue-700/40">
+              사이클 #{cycle.cycleNumber}
+            </span>
+          </div>
+
+          {/* Expert weight/influence */}
+          <div className="bg-slate-900/60 rounded-lg p-3 mb-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-400">AI 시스템 내 가중치</p>
+                <p className="text-sm text-slate-300 mt-0.5">
+                  신뢰도 {expert.credibilityScore}점 기반, 적중률 {hitRate}% 반영
+                </p>
+              </div>
+              <div className={`text-right px-3 py-1.5 rounded-lg bg-slate-800 border border-slate-700`}>
+                <p className={`text-lg font-bold ${weightColor}`}>{expertWeight}</p>
+                <p className="text-[10px] text-slate-500">영향력</p>
+              </div>
+            </div>
+          </div>
+
+          {expertPredictions.length > 0 ? (
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">
+                현재 사이클 ({cycle.startDate} ~ {cycle.endDate}) 에서 {expertPredictions.length}개 예측에 참여 중
+              </p>
+              {expertPredictions.map((pred) => {
+                const asset = assets.find((a) => a.id === pred.assetId);
+                const isSupporting = pred.supportingExpertIds.includes(expert.id);
+                const directionColor =
+                  pred.direction === "상승" ? "text-emerald-400" :
+                  pred.direction === "하락" ? "text-red-400" :
+                  pred.direction === "보합" ? "text-yellow-400" : "text-orange-400";
+
+                return (
+                  <div key={pred.id} className="bg-slate-900/80 border border-slate-700/60 rounded-xl p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-semibold text-white">{asset?.name || pred.assetId}</span>
+                          <span className={`text-xs font-bold ${directionColor} bg-slate-800 px-2 py-0.5 rounded-full`}>
+                            {pred.direction}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 line-clamp-2 mt-1">{pred.rationale}</p>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <div className="flex items-center gap-1.5">
+                          {isSupporting ? (
+                            <ThumbsUp className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <ThumbsDown className="w-3.5 h-3.5 text-red-400" />
+                          )}
+                          <span className={`text-xs font-semibold ${isSupporting ? "text-emerald-400" : "text-red-400"}`}>
+                            {isSupporting ? "지지" : "반대"}
+                          </span>
+                        </div>
+                        <span className="text-xs text-slate-500">
+                          확률 <span className="text-orange-400 font-bold">{pred.probability}%</span>
+                        </span>
+                        <span className="text-xs text-slate-500">
+                          신뢰도 <span className="text-blue-400 font-bold">{pred.confidence}%</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">현재 사이클에 직접 참여 중인 예측이 없습니다.</p>
+          )}
+        </div>
+      </section>
+
+      {/* Cross-links */}
+      <section>
+        <h3 className="text-sm font-semibold text-slate-400 mb-4">관련 페이지</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Link href="/predictions" className="group bg-slate-900 border border-slate-800 hover:border-blue-700/50 rounded-xl p-4 transition-all">
+            <div className="flex items-center gap-2 mb-1">
+              <TrendingUp className="w-4 h-4 text-blue-400" />
+              <span className="text-sm font-semibold text-white group-hover:text-blue-300 transition-colors">AI 예측 사이클</span>
+              <ArrowRight className="w-3 h-3 text-slate-600 group-hover:text-blue-400 transition-colors ml-auto" />
+            </div>
+            <p className="text-xs text-slate-400">3일 주기 AI 예측 현황 보기</p>
+          </Link>
+          <Link href="/ranking" className="group bg-slate-900 border border-slate-800 hover:border-purple-700/50 rounded-xl p-4 transition-all">
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="w-4 h-4 text-purple-400" />
+              <span className="text-sm font-semibold text-white group-hover:text-purple-300 transition-colors">전문가 랭킹</span>
+              <ArrowRight className="w-3 h-3 text-slate-600 group-hover:text-purple-400 transition-colors ml-auto" />
+            </div>
+            <p className="text-xs text-slate-400">적중률 기반 전문가 순위</p>
+          </Link>
+          <Link href="/investment" className="group bg-slate-900 border border-slate-800 hover:border-emerald-700/50 rounded-xl p-4 transition-all">
+            <div className="flex items-center gap-2 mb-1">
+              <Wallet className="w-4 h-4 text-emerald-400" />
+              <span className="text-sm font-semibold text-white group-hover:text-emerald-300 transition-colors">투자 전략</span>
+              <ArrowRight className="w-3 h-3 text-slate-600 group-hover:text-emerald-400 transition-colors ml-auto" />
+            </div>
+            <p className="text-xs text-slate-400">전문가 분석 기반 투자 전략</p>
+          </Link>
+        </div>
+      </section>
     </div>
   );
 }

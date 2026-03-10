@@ -2,18 +2,17 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Globe, Users, BarChart3, Award, Menu, X, Calendar, Target, TrendingUp, Activity, DollarSign } from "lucide-react";
+import { Globe, Users, BarChart3, Menu, X, TrendingUp, Activity, DollarSign, Brain } from "lucide-react";
 import { useState } from "react";
 
 const navItems = [
   { href: "/", label: "홈", icon: Globe },
+  { href: "/predictions", label: "AI예측", icon: Brain },
   { href: "/assets", label: "자산전망", icon: TrendingUp },
-  { href: "/weekly", label: "주간예측", icon: Calendar },
   { href: "/factors", label: "변동요인", icon: Activity },
   { href: "/experts", label: "전문가", icon: Users },
-  { href: "/scorecard", label: "성적표", icon: Target },
-  { href: "/ranking", label: "랭킹", icon: Award },
   { href: "/investment", label: "투자전략", icon: DollarSign },
+  { href: "/investment/simulation", label: "모의투자", icon: BarChart3 },
 ];
 
 export default function Navbar() {
@@ -30,7 +29,7 @@ export default function Navbar() {
 
         <nav className="hidden md:flex items-center gap-1">
           {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+            const active = pathname === href || (href !== "/" && href !== "/investment" && pathname.startsWith(href)) || (href === "/investment" && pathname === "/investment");
             return (
               <Link
                 key={href}
@@ -59,7 +58,7 @@ export default function Navbar() {
       {mobileOpen && (
         <div className="md:hidden border-t border-slate-800 bg-slate-950">
           {navItems.map(({ href, label, icon: Icon }) => {
-            const active = pathname === href || (href !== "/" && pathname.startsWith(href));
+            const active = pathname === href || (href !== "/" && href !== "/investment" && pathname.startsWith(href)) || (href === "/investment" && pathname === "/investment");
             return (
               <Link
                 key={href}

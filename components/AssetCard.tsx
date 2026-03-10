@@ -24,10 +24,11 @@ function getDirectionInfo(direction: string) {
 }
 
 function formatValue(value: number, unit: string): string {
-  if (unit === "원") return value.toLocaleString() + "원";
+  if (unit === "원/3.75g") return value.toLocaleString() + "원/돈";
+  if (unit === "원" || unit === "원/돈" || unit === "원/리터" || unit === "원/kg") return value.toLocaleString() + "원";
   if (unit === "%") return value.toFixed(2) + "%";
   if (unit === "달러/온스" || unit === "달러/배럴" || unit === "달러/톤") return "$" + value.toLocaleString();
-  if (unit === "pt") return value.toLocaleString();
+  if (unit === "pt" || unit === "지수") return value.toLocaleString();
   if (unit === "엔") return "¥" + value.toFixed(1);
   return value.toLocaleString() + unit;
 }

@@ -2,12 +2,13 @@ import type { Asset, AssetPrediction, AssetConsensusResult, Expert, PredictionDi
 import { calculateIssueCredibility } from "./credibility";
 
 /**
- * 자산별 전문가 컨센서스 계산
+ * 자산별 전문가 컨센서스 계산 (적중률 압도적 가중)
  *
- * 기존 전문가 신뢰도(8축 가중합) + 적중률 기반 가중치를 재활용하여
- * 각 자산의 방향을 전문가 컨센서스로 산출.
+ * 10만명 전문가 풀에서 각 자산별 전문가들의 과거 예측 적중률을 분석하고,
+ * 적중률이 높은 전문가의 현재 전망에 압도적으로 큰 가중치를 부여.
  *
- * 가중치 = (자산 관련 도메인 신뢰도 × 0.6) + (과거 적중도 × 0.4)
+ * 가중치 = (과거 적중도 × 0.8) + (자산 관련 도메인 신뢰도 × 0.2)
+ * → 적중률이 전체 확률 산출의 80%를 좌우
  */
 
 /** 자산 카테고리 → 관련 전문가 도메인 매핑 */
@@ -29,16 +30,24 @@ const ASSET_DOMAIN_MAP: Record<string, string[]> = {
   "sp500": ["주식시장", "거시경제", "국제금융"],
   "nasdaq": ["주식시장", "AI기술", "반도체"],
   "kosdaq": ["주식시장", "한국경제"],
+  // 산업
+  "semiconductor": ["반도체", "AI기술", "글로벌공급망"],
+  "ai-tech": ["AI기술", "주식시장", "거시경제"],
+  "ev-battery": ["에너지", "글로벌공급망", "원자재"],
+  "bio-pharma": ["헤지펀드", "주식시장", "거시경제"],
+  "defense": ["군사안보", "지정학리스크", "경제안보"],
+  "shipbuilding": ["글로벌공급망", "에너지", "한국경제"],
 };
 
 /**
  * 자산에 대한 전문가 가중치 산출
- * 기존 getExpertWeight 로직 재활용: 도메인 신뢰도(60%) + 적중도(40%)
+ * ★ 과거 적중률(80%) + 도메인 신뢰도(20%)
+ * 적중률이 압도적으로 가중치를 좌우 — 맞춘 사람의 말이 가장 중요
  */
 function getAssetExpertWeight(expert: Expert, assetId: string): number {
   const domains = ASSET_DOMAIN_MAP[assetId] || [];
   const issueCredibility = calculateIssueCredibility(expert, domains);
-  return (issueCredibility * 0.6 + expert.accuracyScore * 0.4) / 100;
+  return (expert.accuracyScore * 0.8 + issueCredibility * 0.2) / 100;
 }
 
 /**

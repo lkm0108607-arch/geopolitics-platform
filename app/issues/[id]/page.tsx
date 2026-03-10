@@ -10,6 +10,9 @@ import ExpertCard from "@/components/ExpertCard";
 import { issues } from "@/data/issues";
 import { calculateAlgorithmProbabilities } from "@/lib/probability";
 
+// 12시간마다 자동 업데이트
+export const revalidate = 43200;
+
 export function generateStaticParams() {
   return issues.map((i) => ({ id: i.id }));
 }

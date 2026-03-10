@@ -5,6 +5,9 @@ import { getAllExperts } from "@/data/experts";
 import ScenarioCard from "@/components/ScenarioCard";
 import { calculateAlgorithmProbabilities } from "@/lib/probability";
 
+// 12시간마다 자동 업데이트
+export const revalidate = 43200;
+
 export default function ScenariosPage() {
   const allExperts = getAllExperts();
 

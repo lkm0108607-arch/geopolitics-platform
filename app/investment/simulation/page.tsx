@@ -17,8 +17,16 @@ import {
   PieChart,
   RefreshCw,
   ChevronDown,
+  Trophy,
+  Crown,
+  Medal,
+  Search,
+  Star,
+  Pencil,
+  X,
 } from "lucide-react";
 import { etfRecommendations, type ETFRecommendation } from "@/data/investmentStrategy";
+import { koreanETFs, getETFByTicker, searchETFs, etfCategories, type KoreanETF } from "@/data/koreanETFs";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +46,7 @@ interface Trade {
 }
 
 interface SimUser {
+  userId: string;
   nickname: string;
   password: string;
   balance: number;
@@ -58,10 +67,21 @@ interface StockPrice {
   name: string;
 }
 
+interface LeaderboardEntry {
+  nickname: string;
+  totalAssets: number;
+  totalPnL: number;
+  totalPnLPct: number;
+  holdingsCount: number;
+  tradeCount: number;
+  topHolding: string | null;
+  updatedAt: string;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const STORAGE_KEY = "geo_sim_users";
-const SESSION_KEY = "geo_sim_session";
+const STORAGE_KEY = "geo_sim_v2";
+const SESSION_KEY = "geo_sim_session_v2";
 
 function loadUsers(): Record<string, SimUser> {
   if (typeof window === "undefined") return {};
@@ -246,6 +266,7 @@ export default function SimulationPage() {
   const [users, setUsers] = useState<Record<string, SimUser>>({});
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   const [mode, setMode] = useState<"login" | "register">("login");
+  const [userId, setUserId] = useState("");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -258,14 +279,31 @@ export default function SimulationPage() {
 
   // Trade state
   const [tradeType, setTradeType] = useState<"매수" | "매도">("매수");
+  const [tradeMode, setTradeMode] = useState<"shares" | "amount">("shares");
   const [tradeShares, setTradeShares] = useState<string>("");
+  const [tradeAmount, setTradeAmount] = useState<string>("");
   const [tradeMsg, setTradeMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Tab
-  const [activeTab, setActiveTab] = useState<"chart" | "holdings" | "history">("chart");
+  const [activeTab, setActiveTab] = useState<"chart" | "holdings" | "history" | "ranking">("chart");
+
+  // Leaderboard
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [lbLoading, setLbLoading] = useState(false);
+
+  // Profile edit modal
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [newNickname, setNewNickname] = useState("");
+  const [profileEditError, setProfileEditError] = useState("");
+  const [profileEditSuccess, setProfileEditSuccess] = useState("");
 
   // Mobile ETF dropdown
   const [showETFList, setShowETFList] = useState(false);
+
+  // ETF search & filter
+  const [etfSearch, setEtfSearch] = useState("");
+  const [etfCategory, setEtfCategory] = useState<string>("전체");
+  const [showRecommendedOnly, setShowRecommendedOnly] = useState(false);
 
   // Hydration guard
   useEffect(() => {
@@ -294,14 +332,16 @@ export default function SimulationPage() {
     if (selectedETF) fetchPrice(selectedETF);
   }, [selectedETF, fetchPrice]);
 
-  // Fetch all prices for portfolio calculation
+  // Fetch prices for user holdings
   useEffect(() => {
     if (!currentUser) return;
+    const u = users[currentUser];
+    if (!u) return;
     const fetchAll = async () => {
-      const tickers = [...new Set([
-        ...etfRecommendations.map((e) => e.ticker),
-      ])];
+      const holdingTickers = u.holdings.map((h) => h.ticker);
+      const tickers = [...new Set(holdingTickers)];
       for (const t of tickers) {
+        if (prices[t]) continue; // already fetched
         try {
           const res = await fetch(`/api/stock-price?ticker=${t}`);
           if (res.ok) {
@@ -312,16 +352,37 @@ export default function SimulationPage() {
       }
     };
     fetchAll();
-  }, [currentUser]);
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const user = currentUser ? users[currentUser] : null;
+  const selectedETFData = getETFByTicker(selectedETF);
   const selectedETFInfo = etfRecommendations.find((e) => e.ticker === selectedETF);
   const selectedPrice = prices[selectedETF];
 
-  // Get price for trading (real if available, fallback to static)
+  // Get price for trading (real if available, fallback to static recommended price)
   function getTradePrice(ticker: string): number {
     return prices[ticker]?.currentPrice || etfRecommendations.find((e) => e.ticker === ticker)?.currentPrice || 0;
   }
+
+  // Get ETF display name from any source
+  function getETFName(ticker: string): string {
+    const kEtf = getETFByTicker(ticker);
+    if (kEtf) return kEtf.nameKr;
+    const rec = etfRecommendations.find((e) => e.ticker === ticker);
+    if (rec) return rec.nameKr;
+    return ticker;
+  }
+
+  // Filtered ETF list
+  const filteredETFs = koreanETFs.filter((etf) => {
+    if (showRecommendedOnly && !etf.isRecommended) return false;
+    if (etfCategory !== "전체" && etf.category !== etfCategory) return false;
+    if (etfSearch.trim()) {
+      const q = etfSearch.toLowerCase();
+      return etf.ticker.includes(q) || etf.name.toLowerCase().includes(q) || etf.nameKr.includes(q) || etf.subCategory.includes(q);
+    }
+    return true;
+  });
 
   // Portfolio calculations
   const totalHoldingsValue = user
@@ -334,40 +395,72 @@ export default function SimulationPage() {
   // ─── Auth ──────────────────────────────────────────────────────────────────
 
   function handleRegister() {
-    if (!nickname.trim() || nickname.trim().length < 2) { setError("닉네임은 2자 이상이어야 합니다."); return; }
+    if (!userId.trim() || userId.trim().length < 3) { setError("아이디는 3자 이상이어야 합니다."); return; }
+    if (!/^[a-zA-Z0-9_]+$/.test(userId.trim())) { setError("아이디는 영문, 숫자, 밑줄만 사용 가능합니다."); return; }
     if (!password.trim() || password.trim().length < 4) { setError("비밀번호는 4자 이상이어야 합니다."); return; }
+    if (!nickname.trim() || nickname.trim().length < 2) { setError("닉네임은 2자 이상이어야 합니다."); return; }
     const u = loadUsers();
-    if (u[nickname.trim()]) { setError("이미 사용 중인 닉네임입니다."); return; }
+    if (u[userId.trim()]) { setError("이미 사용 중인 아이디입니다."); return; }
     const newUser: SimUser = {
-      nickname: nickname.trim(), password: password.trim(),
+      userId: userId.trim(), nickname: nickname.trim(), password: password.trim(),
       balance: 10000000, holdings: [], trades: [],
       createdAt: new Date().toISOString().split("T")[0],
     };
-    u[nickname.trim()] = newUser;
+    u[userId.trim()] = newUser;
     saveUsers(u); setUsers(u);
-    setCurrentUser(nickname.trim()); setSession(nickname.trim());
-    setError(""); setNickname(""); setPassword("");
+    setCurrentUser(userId.trim()); setSession(userId.trim());
+    setError(""); setUserId(""); setNickname(""); setPassword("");
   }
 
   function handleLogin() {
-    if (!nickname.trim() || !password.trim()) { setError("닉네임과 비밀번호를 입력해주세요."); return; }
+    if (!userId.trim() || !password.trim()) { setError("아이디와 비밀번호를 입력해주세요."); return; }
     const u = loadUsers();
-    const found = u[nickname.trim()];
-    if (!found) { setError("등록되지 않은 닉네임입니다."); return; }
+    const found = u[userId.trim()];
+    if (!found) { setError("등록되지 않은 아이디입니다."); return; }
     if (found.password !== password.trim()) { setError("비밀번호가 일치하지 않습니다."); return; }
-    setUsers(u); setCurrentUser(nickname.trim()); setSession(nickname.trim());
-    setError(""); setNickname(""); setPassword("");
+    setUsers(u); setCurrentUser(userId.trim()); setSession(userId.trim());
+    setError(""); setUserId(""); setNickname(""); setPassword("");
+  }
+
+  // ─── Profile Edit ──────────────────────────────────────────────────────────
+
+  function handleUpdateNickname() {
+    const trimmed = newNickname.trim();
+    if (!trimmed || trimmed.length < 2) { setProfileEditError("닉네임은 2자 이상이어야 합니다."); return; }
+    if (!currentUser) return;
+    const u = loadUsers();
+    const userData = u[currentUser];
+    if (!userData) return;
+    if (trimmed === userData.nickname) { setProfileEditError("현재 닉네임과 동일합니다."); return; }
+    u[currentUser] = { ...userData, nickname: trimmed };
+    saveUsers(u);
+    setUsers(u);
+    setNewNickname("");
+    setProfileEditError("");
+    setProfileEditSuccess("닉네임이 변경되었습니다.");
+    setTimeout(() => { setProfileEditSuccess(""); setShowProfileEdit(false); }, 1500);
   }
 
   // ─── Trade ─────────────────────────────────────────────────────────────────
 
   function handleTrade() {
     if (!user || !currentUser || !selectedETF) return;
-    const shares = parseInt(tradeShares);
-    if (!shares || shares <= 0) { setTradeMsg({ type: "error", text: "수량을 올바르게 입력해주세요." }); return; }
 
     const price = getTradePrice(selectedETF);
     if (!price) { setTradeMsg({ type: "error", text: "가격 정보를 불러올 수 없습니다." }); return; }
+
+    // Calculate shares based on mode
+    let shares: number;
+    if (tradeMode === "amount") {
+      const amount = parseInt(tradeAmount);
+      if (!amount || amount <= 0) { setTradeMsg({ type: "error", text: "금액을 올바르게 입력해주세요." }); return; }
+      shares = Math.floor(amount / price);
+      if (shares <= 0) { setTradeMsg({ type: "error", text: `최소 1주 매수 가능 금액: ${formatNum(price)}원` }); return; }
+    } else {
+      shares = parseInt(tradeShares);
+      if (!shares || shares <= 0) { setTradeMsg({ type: "error", text: "수량을 올바르게 입력해주세요." }); return; }
+    }
+
     const totalCost = price * shares;
     const u = loadUsers();
     const userData = u[currentUser];
@@ -375,7 +468,7 @@ export default function SimulationPage() {
 
     if (tradeType === "매수") {
       if (totalCost > userData.balance) {
-        setTradeMsg({ type: "error", text: `잔액 부족. 필요: ${formatNum(totalCost)}원` }); return;
+        setTradeMsg({ type: "error", text: `잔액 부족. 필요: ${formatNum(totalCost)}원 (${shares}주)` }); return;
       }
       userData.balance -= totalCost;
       const existing = userData.holdings.find((h) => h.ticker === selectedETF);
@@ -387,7 +480,7 @@ export default function SimulationPage() {
         userData.holdings.push({ ticker: selectedETF, shares, avgPrice: price });
       }
       userData.trades.unshift({ ticker: selectedETF, type: "매수", shares, price, total: totalCost, date: new Date().toLocaleString("ko-KR") });
-      setTradeMsg({ type: "success", text: `${selectedETFInfo?.nameKr} ${shares}주 매수 완료!` });
+      setTradeMsg({ type: "success", text: `${getETFName(selectedETF)} ${shares}주 매수 완료! (${formatNum(totalCost)}원)` });
     } else {
       const existing = userData.holdings.find((h) => h.ticker === selectedETF);
       if (!existing || existing.shares < shares) {
@@ -397,9 +490,9 @@ export default function SimulationPage() {
       existing.shares -= shares;
       if (existing.shares === 0) userData.holdings = userData.holdings.filter((h) => h.ticker !== selectedETF);
       userData.trades.unshift({ ticker: selectedETF, type: "매도", shares, price, total: totalCost, date: new Date().toLocaleString("ko-KR") });
-      setTradeMsg({ type: "success", text: `${selectedETFInfo?.nameKr} ${shares}주 매도 완료!` });
+      setTradeMsg({ type: "success", text: `${getETFName(selectedETF)} ${shares}주 매도 완료! (${formatNum(totalCost)}원)` });
     }
-    saveUsers(u); setUsers({ ...u }); setTradeShares("");
+    saveUsers(u); setUsers({ ...u }); setTradeShares(""); setTradeAmount("");
   }
 
   // Quick buy amounts
@@ -407,6 +500,62 @@ export default function SimulationPage() {
     const price = getTradePrice(selectedETF);
     if (price > 0) setTradeShares(String(Math.floor(amount / price)));
   }
+
+  // ─── Leaderboard ─────────────────────────────────────────────────────────────
+
+  const fetchLeaderboard = useCallback(async () => {
+    setLbLoading(true);
+    try {
+      const res = await fetch("/api/leaderboard");
+      if (res.ok) {
+        const data = await res.json();
+        setLeaderboard(data.entries || []);
+      }
+    } catch { /* ignore */ }
+    setLbLoading(false);
+  }, []);
+
+  // Fetch leaderboard when tab is selected
+  useEffect(() => {
+    if (activeTab === "ranking") fetchLeaderboard();
+  }, [activeTab, fetchLeaderboard]);
+
+  // Auto-publish to leaderboard (called after trades and on login)
+  const autoPublish = useCallback(async (userData: SimUser, assets: number, pnl: number, pnlPct: string) => {
+    let topHoldingName: string | null = null;
+    if (userData.holdings.length > 0) {
+      const sorted = [...userData.holdings].sort((a, b) => {
+        const priceA = prices[a.ticker]?.currentPrice || etfRecommendations.find((e) => e.ticker === a.ticker)?.currentPrice || 0;
+        const priceB = prices[b.ticker]?.currentPrice || etfRecommendations.find((e) => e.ticker === b.ticker)?.currentPrice || 0;
+        return (b.shares * priceB) - (a.shares * priceA);
+      });
+      const kEtf = getETFByTicker(sorted[0].ticker);
+      topHoldingName = kEtf?.nameKr || sorted[0].ticker;
+    }
+
+    try {
+      await fetch("/api/leaderboard", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          nickname: userData.nickname,
+          totalAssets: assets,
+          totalPnL: pnl,
+          totalPnLPct: parseFloat(pnlPct),
+          holdingsCount: userData.holdings.length,
+          tradeCount: userData.trades.length,
+          topHolding: topHoldingName,
+        }),
+      });
+    } catch { /* ignore */ }
+  }, [prices]);
+
+  // Auto-publish on login and when portfolio changes
+  useEffect(() => {
+    if (user && currentUser && totalAssets > 0) {
+      autoPublish(user, totalAssets, totalPnL, totalPnLPct);
+    }
+  }, [currentUser, totalAssets]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Loading Screen ─────────────────────────────────────────────────────────
 
@@ -445,13 +594,19 @@ export default function SimulationPage() {
           </div>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />닉네임</label>
-              <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="닉네임" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && (mode === "login" ? handleLogin() : handleRegister())} />
+              <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />아이디</label>
+              <input type="text" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="영문, 숫자, 밑줄 (3자 이상)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && (mode === "login" ? handleLogin() : handleRegister())} />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1.5"><Lock className="w-3 h-3 inline mr-1" />개인식별비밀번호</label>
-              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="비밀번호" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && (mode === "login" ? handleLogin() : handleRegister())} />
+              <label className="block text-xs text-slate-400 mb-1.5"><Lock className="w-3 h-3 inline mr-1" />비밀번호</label>
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="비밀번호 (4자 이상)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && (mode === "login" ? handleLogin() : handleRegister())} />
             </div>
+            {mode === "register" && (
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />닉네임 (표시 이름)</label>
+                <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="닉네임 (2자 이상)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && handleRegister()} />
+              </div>
+            )}
             {error && <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">{error}</p>}
             <button onClick={mode === "login" ? handleLogin : handleRegister} className={`w-full py-3 rounded-lg text-sm font-bold transition-colors ${mode === "login" ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
               {mode === "login" ? "로그인" : "회원가입 (1,000만원 지급)"}
@@ -459,7 +614,7 @@ export default function SimulationPage() {
           </div>
           {mode === "register" && (
             <div className="mt-4 bg-emerald-900/15 border border-emerald-800/25 rounded-lg p-3">
-              <p className="text-xs text-emerald-300 leading-relaxed">회원가입 시 <strong>1,000만원</strong> 모의투자 자금이 지급됩니다. 추천 ETF 18종에 한정하여 투자할 수 있습니다.</p>
+              <p className="text-xs text-emerald-300 leading-relaxed">회원가입 시 <strong>1,000만원</strong> 모의투자 자금이 지급됩니다. 국내 상장 ETF {koreanETFs.length}종 전체를 매매할 수 있습니다.</p>
             </div>
           )}
         </div>
@@ -474,6 +629,77 @@ export default function SimulationPage() {
 
   return (
     <div className="max-w-[1400px] mx-auto px-4 py-4">
+      {/* Profile Edit Modal */}
+      {showProfileEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setShowProfileEdit(false)}>
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 w-full max-w-sm mx-4 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center">
+                  <User className="w-4 h-4 text-blue-400" />
+                </div>
+                <h2 className="text-base font-bold text-white">회원 정보 수정</h2>
+              </div>
+              <button onClick={() => setShowProfileEdit(false)} className="text-slate-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* User ID (read-only) */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">
+                  <User className="w-3 h-3 inline mr-1" />아이디 (수정 불가)
+                </label>
+                <div className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-500 cursor-not-allowed">
+                  {currentUser}
+                </div>
+              </div>
+
+              {/* Nickname field */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">
+                  <User className="w-3 h-3 inline mr-1" />닉네임 (수정 가능)
+                </label>
+                <input
+                  type="text"
+                  value={newNickname}
+                  onChange={(e) => { setNewNickname(e.target.value); setProfileEditError(""); setProfileEditSuccess(""); }}
+                  placeholder="새 닉네임 입력"
+                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  onKeyDown={(e) => e.key === "Enter" && handleUpdateNickname()}
+                />
+              </div>
+
+              {/* Password field (read-only) */}
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">
+                  <Lock className="w-3 h-3 inline mr-1" />비밀번호 (수정 불가)
+                </label>
+                <div className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-500 flex items-center gap-2 cursor-not-allowed">
+                  <Lock className="w-3 h-3 text-slate-600" />
+                  <span>••••••••</span>
+                </div>
+              </div>
+
+              {profileEditError && (
+                <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">{profileEditError}</p>
+              )}
+              {profileEditSuccess && (
+                <p className="text-xs text-emerald-400 bg-emerald-900/20 border border-emerald-800/30 rounded-lg px-3 py-2">{profileEditSuccess}</p>
+              )}
+
+              <button
+                onClick={handleUpdateNickname}
+                className="w-full py-2.5 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+              >
+                닉네임 변경
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Bar */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
@@ -498,9 +724,13 @@ export default function SimulationPage() {
               수익 <strong>{totalPnL >= 0 ? "+" : ""}{formatKRW(totalPnL)} ({totalPnL >= 0 ? "+" : ""}{totalPnLPct}%)</strong>
             </span>
           </div>
-          <span className="text-sm text-slate-300 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700">
-            <User className="w-3 h-3 inline mr-1 text-blue-400" />{user?.nickname}
-          </span>
+          <button
+            onClick={() => { setShowProfileEdit(true); setNewNickname(user?.nickname || ""); setProfileEditError(""); setProfileEditSuccess(""); }}
+            className="flex items-center gap-1.5 text-sm text-slate-300 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-blue-500 transition-colors"
+          >
+            <User className="w-3 h-3 text-blue-400" />{user?.nickname || currentUser}
+            <Pencil className="w-3 h-3 text-slate-500" />
+          </button>
           <button onClick={() => { setCurrentUser(null); clearSession(); }} className="text-slate-400 hover:text-white transition-colors">
             <LogOut className="w-4 h-4" />
           </button>
@@ -531,6 +761,7 @@ export default function SimulationPage() {
           { key: "chart" as const, label: "차트/매매", icon: BarChart3 },
           { key: "holdings" as const, label: "보유종목", icon: PieChart },
           { key: "history" as const, label: "거래내역", icon: History },
+          { key: "ranking" as const, label: "랭킹", icon: Trophy },
         ]).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)} className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === key ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>
             <Icon className="w-4 h-4" />{label}
@@ -542,59 +773,100 @@ export default function SimulationPage() {
       {activeTab === "chart" && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
           {/* Left: ETF List */}
-          <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="lg:col-span-1 bg-slate-900 border border-slate-800 rounded-xl overflow-hidden flex flex-col">
             {/* Mobile dropdown toggle */}
             <button
               className="lg:hidden w-full flex items-center justify-between p-3 text-sm font-medium text-white"
               onClick={() => setShowETFList(!showETFList)}
             >
-              <span>{selectedETFInfo?.nameKr || "종목 선택"}</span>
+              <span>{selectedETFData?.nameKr || getETFName(selectedETF)}</span>
               <ChevronDown className={`w-4 h-4 transition-transform ${showETFList ? "rotate-180" : ""}`} />
             </button>
 
-            <div className={`${showETFList ? "block" : "hidden"} lg:block max-h-[600px] overflow-y-auto`}>
-              <div className="p-2 border-b border-slate-800 sticky top-0 bg-slate-900 z-10">
-                <p className="text-xs text-slate-500 px-2">투자 가능 종목 ({etfRecommendations.length})</p>
-              </div>
-              {etfRecommendations.map((etf) => {
-                const p = prices[etf.ticker];
-                const isSelected = selectedETF === etf.ticker;
-                const held = user?.holdings.find((h) => h.ticker === etf.ticker);
-                return (
+            <div className={`${showETFList ? "block" : "hidden"} lg:block flex-1 flex flex-col`}>
+              {/* Search & Filter Header */}
+              <div className="p-2 border-b border-slate-800 sticky top-0 bg-slate-900 z-10 space-y-2">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={etfSearch}
+                    onChange={(e) => setEtfSearch(e.target.value)}
+                    placeholder="ETF 검색 (이름, 종목코드)"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-md pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-hide">
+                  {["전체", ...etfCategories].map((cat) => (
+                    <button
+                      key={cat}
+                      onClick={() => setEtfCategory(cat)}
+                      className={`flex-shrink-0 text-[10px] px-2 py-1 rounded-md transition-colors ${etfCategory === cat ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
                   <button
-                    key={etf.ticker}
-                    onClick={() => { setSelectedETF(etf.ticker); setShowETFList(false); setTradeMsg(null); }}
-                    className={`w-full text-left px-3 py-2.5 border-b border-slate-800/50 transition-colors ${isSelected ? "bg-blue-600/15 border-l-2 border-l-blue-500" : "hover:bg-slate-800/50 border-l-2 border-l-transparent"}`}
+                    onClick={() => setShowRecommendedOnly(!showRecommendedOnly)}
+                    className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors ${showRecommendedOnly ? "bg-amber-600/30 text-amber-300 border border-amber-600/40" : "bg-slate-800 text-slate-500 hover:text-white"}`}
                   >
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0">
-                        <p className={`text-sm font-medium truncate ${isSelected ? "text-blue-300" : "text-white"}`}>
-                          {etf.nameKr}
-                        </p>
-                        <div className="flex items-center gap-1.5 mt-0.5">
-                          <span className="text-[10px] text-slate-500 font-mono">{etf.ticker}</span>
-                          <span className={`text-[10px] px-1.5 py-0 rounded ${
-                            etf.category === "방어형" ? "text-blue-400 bg-blue-900/30" : etf.category === "공격형" ? "text-red-400 bg-red-900/30" : "text-amber-400 bg-amber-900/30"
-                          }`}>{etf.category}</span>
-                          {held && <span className="text-[10px] text-emerald-400">{held.shares}주</span>}
+                    <Star className="w-3 h-3" /> AI추천만
+                  </button>
+                  <span className="text-[10px] text-slate-500">{filteredETFs.length}종목</span>
+                </div>
+              </div>
+
+              {/* ETF List */}
+              <div className="max-h-[500px] overflow-y-auto">
+                {filteredETFs.map((etf) => {
+                  const p = prices[etf.ticker];
+                  const isSelected = selectedETF === etf.ticker;
+                  const held = user?.holdings.find((h) => h.ticker === etf.ticker);
+                  const recInfo = etfRecommendations.find((e) => e.ticker === etf.ticker);
+                  return (
+                    <button
+                      key={etf.ticker}
+                      onClick={() => { setSelectedETF(etf.ticker); setShowETFList(false); setTradeMsg(null); }}
+                      className={`w-full text-left px-3 py-2.5 border-b border-slate-800/50 transition-colors ${isSelected ? "bg-blue-600/15 border-l-2 border-l-blue-500" : "hover:bg-slate-800/50 border-l-2 border-l-transparent"}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0">
+                          <p className={`text-sm font-medium truncate ${isSelected ? "text-blue-300" : "text-white"}`}>
+                            {etf.isRecommended && <Star className="w-3 h-3 text-amber-400 inline mr-1 -mt-0.5" />}
+                            {etf.nameKr}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] text-slate-500 font-mono">{etf.ticker}</span>
+                            <span className="text-[10px] px-1.5 py-0 rounded text-slate-400 bg-slate-800/80">{etf.category}</span>
+                            {held && <span className="text-[10px] text-emerald-400">{held.shares}주</span>}
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0 ml-2">
+                          {p ? (
+                            <>
+                              <p className="text-sm font-medium text-white">{formatNum(p.currentPrice)}</p>
+                              <p className={`text-[10px] ${(p.change ?? 0) >= 0 ? "text-red-400" : "text-blue-400"}`}>
+                                {(p.change ?? 0) >= 0 ? "+" : ""}{p.changePercent?.toFixed(2) ?? "0.00"}%
+                              </p>
+                            </>
+                          ) : recInfo ? (
+                            <p className="text-sm text-slate-500">{formatNum(recInfo.currentPrice)}</p>
+                          ) : (
+                            <p className="text-[10px] text-slate-600">-</p>
+                          )}
                         </div>
                       </div>
-                      <div className="text-right flex-shrink-0 ml-2">
-                        {p ? (
-                          <>
-                            <p className="text-sm font-medium text-white">{formatNum(p.currentPrice)}</p>
-                            <p className={`text-[10px] ${(p.change ?? 0) >= 0 ? "text-red-400" : "text-blue-400"}`}>
-                              {(p.change ?? 0) >= 0 ? "+" : ""}{p.changePercent?.toFixed(2) ?? "0.00"}%
-                            </p>
-                          </>
-                        ) : (
-                          <p className="text-sm text-slate-500">{formatNum(etf.currentPrice)}</p>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+                {filteredETFs.length === 0 && (
+                  <div className="text-center py-8">
+                    <p className="text-xs text-slate-500">검색 결과가 없습니다</p>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -604,8 +876,11 @@ export default function SimulationPage() {
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <div className="flex items-start justify-between mb-2">
                 <div>
-                  <h2 className="text-lg font-bold text-white">{selectedETFInfo?.nameKr}</h2>
-                  <p className="text-xs text-slate-500">{selectedETFInfo?.name} · {selectedETF}</p>
+                  <h2 className="text-lg font-bold text-white">
+                    {selectedETFData?.isRecommended && <Star className="w-4 h-4 text-amber-400 inline mr-1 -mt-1" />}
+                    {selectedETFData?.nameKr || getETFName(selectedETF)}
+                  </h2>
+                  <p className="text-xs text-slate-500">{selectedETFData?.name || selectedETF} · {selectedETF} · {selectedETFData?.provider} · {selectedETFData?.category}</p>
                 </div>
                 <button onClick={() => fetchPrice(selectedETF)} className="text-slate-500 hover:text-white transition-colors p-1">
                   <RefreshCw className={`w-4 h-4 ${priceLoading ? "animate-spin" : ""}`} />
@@ -716,16 +991,39 @@ export default function SimulationPage() {
                 )}
               </div>
 
-              {/* Shares */}
-              <div className="mb-3">
-                <label className="block text-xs text-slate-400 mb-1">수량 (주)</label>
-                <input
-                  type="number" min="1" value={tradeShares}
-                  onChange={(e) => setTradeShares(e.target.value)}
-                  placeholder="0"
-                  className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-                />
+              {/* Trade Mode Toggle */}
+              <div className="flex mb-2 bg-slate-800/60 rounded-md p-0.5">
+                <button onClick={() => { setTradeMode("shares"); setTradeAmount(""); }} className={`flex-1 py-1.5 text-[11px] font-medium rounded transition-colors ${tradeMode === "shares" ? "bg-slate-700 text-white" : "text-slate-500"}`}>수량(주)</button>
+                <button onClick={() => { setTradeMode("amount"); setTradeShares(""); }} className={`flex-1 py-1.5 text-[11px] font-medium rounded transition-colors ${tradeMode === "amount" ? "bg-slate-700 text-white" : "text-slate-500"}`}>금액(원)</button>
               </div>
+
+              {/* Input */}
+              {tradeMode === "shares" ? (
+                <div className="mb-3">
+                  <label className="block text-xs text-slate-400 mb-1">수량 (주)</label>
+                  <input
+                    type="number" min="1" value={tradeShares}
+                    onChange={(e) => setTradeShares(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              ) : (
+                <div className="mb-3">
+                  <label className="block text-xs text-slate-400 mb-1">금액 (원)</label>
+                  <input
+                    type="number" min="1" value={tradeAmount}
+                    onChange={(e) => setTradeAmount(e.target.value)}
+                    placeholder="0"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                  />
+                  {tradeAmount && parseInt(tradeAmount) > 0 && currentPrice > 0 && (
+                    <p className="text-[10px] text-slate-500 mt-1">
+                      ≈ {Math.floor(parseInt(tradeAmount) / currentPrice)}주 ({formatNum(Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice)}원 체결)
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Quick Amount Buttons */}
               {tradeType === "매수" && (
@@ -736,7 +1034,14 @@ export default function SimulationPage() {
                     { label: "50%", pct: 0.5 },
                     { label: "전액", pct: 1 },
                   ].map(({ label, pct }) => (
-                    <button key={label} onClick={() => setSharesByAmount((user?.balance || 0) * pct)}
+                    <button key={label} onClick={() => {
+                      const amt = Math.floor((user?.balance || 0) * pct);
+                      if (tradeMode === "amount") {
+                        setTradeAmount(String(amt));
+                      } else {
+                        setSharesByAmount(amt);
+                      }
+                    }}
                       className="flex-1 text-[10px] py-1.5 rounded bg-slate-800 text-slate-400 hover:text-white border border-slate-700 transition-colors"
                     >{label}</button>
                   ))}
@@ -750,7 +1055,14 @@ export default function SimulationPage() {
                     { label: "75%", pct: 0.75 },
                     { label: "전량", pct: 1 },
                   ].map(({ label, pct }) => (
-                    <button key={label} onClick={() => setTradeShares(String(Math.floor(holding.shares * pct)))}
+                    <button key={label} onClick={() => {
+                      const shares = Math.floor(holding.shares * pct);
+                      if (tradeMode === "amount") {
+                        setTradeAmount(String(shares * currentPrice));
+                      } else {
+                        setTradeShares(String(shares));
+                      }
+                    }}
                       className="flex-1 text-[10px] py-1.5 rounded bg-slate-800 text-slate-400 hover:text-white border border-slate-700 transition-colors"
                     >{label}</button>
                   ))}
@@ -758,17 +1070,39 @@ export default function SimulationPage() {
               )}
 
               {/* Total Preview */}
-              {tradeShares && parseInt(tradeShares) > 0 && (
+              {((tradeMode === "shares" && tradeShares && parseInt(tradeShares) > 0) ||
+                (tradeMode === "amount" && tradeAmount && parseInt(tradeAmount) > 0)) && (
                 <div className="bg-slate-800/40 rounded-lg p-3 mb-3">
-                  <div className="flex justify-between text-xs mb-1">
-                    <span className="text-slate-400">예상 {tradeType} 금액</span>
-                    <span className="text-white font-bold">{formatNum(currentPrice * parseInt(tradeShares))}원</span>
-                  </div>
-                  {tradeType === "매수" && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-slate-500">잔액 후</span>
-                      <span className="text-slate-400">{formatNum((user?.balance || 0) - currentPrice * parseInt(tradeShares))}원</span>
-                    </div>
+                  {tradeMode === "shares" ? (
+                    <>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-400">예상 {tradeType} 금액</span>
+                        <span className="text-white font-bold">{formatNum(currentPrice * parseInt(tradeShares))}원</span>
+                      </div>
+                      {tradeType === "매수" && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">잔액 후</span>
+                          <span className="text-slate-400">{formatNum((user?.balance || 0) - currentPrice * parseInt(tradeShares))}원</span>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-400">체결 수량</span>
+                        <span className="text-white font-bold">{Math.floor(parseInt(tradeAmount) / currentPrice)}주</span>
+                      </div>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-slate-400">실제 {tradeType} 금액</span>
+                        <span className="text-white font-bold">{formatNum(Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice)}원</span>
+                      </div>
+                      {tradeType === "매수" && (
+                        <div className="flex justify-between text-xs">
+                          <span className="text-slate-500">잔액 후</span>
+                          <span className="text-slate-400">{formatNum((user?.balance || 0) - Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice)}원</span>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}
@@ -782,7 +1116,7 @@ export default function SimulationPage() {
 
               <button
                 onClick={handleTrade}
-                disabled={!tradeShares || parseInt(tradeShares) <= 0}
+                disabled={tradeMode === "shares" ? (!tradeShares || parseInt(tradeShares) <= 0) : (!tradeAmount || parseInt(tradeAmount) <= 0)}
                 className={`w-full py-3 rounded-lg text-sm font-bold transition-colors disabled:opacity-30 ${tradeType === "매수" ? "bg-red-600 hover:bg-red-500 text-white" : "bg-blue-600 hover:bg-blue-500 text-white"}`}
               >
                 {tradeType} 주문
@@ -799,7 +1133,6 @@ export default function SimulationPage() {
                 <h3 className="text-sm font-bold text-white mb-3">보유 요약</h3>
                 <div className="space-y-2">
                   {user.holdings.map((h) => {
-                    const etf = etfRecommendations.find((e) => e.ticker === h.ticker);
                     const p = getTradePrice(h.ticker);
                     const pnl = (p - h.avgPrice) * h.shares;
                     return (
@@ -810,7 +1143,7 @@ export default function SimulationPage() {
                       >
                         <div className="flex justify-between items-center">
                           <div>
-                            <p className="text-xs font-medium text-white">{etf?.nameKr}</p>
+                            <p className="text-xs font-medium text-white">{getETFName(h.ticker)}</p>
                             <p className="text-[10px] text-slate-500">{h.shares}주 · 평단 {formatNum(h.avgPrice)}원</p>
                           </div>
                           <div className="text-right">
@@ -845,7 +1178,7 @@ export default function SimulationPage() {
           ) : (
             <div className="space-y-3">
               {user?.holdings.map((h) => {
-                const etf = etfRecommendations.find((e) => e.ticker === h.ticker);
+                const kEtf = getETFByTicker(h.ticker);
                 const price = getTradePrice(h.ticker);
                 const currentValue = h.shares * price;
                 const investedValue = h.shares * h.avgPrice;
@@ -854,11 +1187,18 @@ export default function SimulationPage() {
                 const sp = prices[h.ticker];
 
                 return (
-                  <div key={h.ticker} className="bg-slate-800/40 border border-slate-700/50 rounded-xl p-4">
+                  <button
+                    key={h.ticker}
+                    onClick={() => { setSelectedETF(h.ticker); setActiveTab("chart"); }}
+                    className="w-full text-left bg-slate-800/40 border border-slate-700/50 rounded-xl p-4 hover:border-blue-500/30 transition-all"
+                  >
                     <div className="flex items-center justify-between mb-3">
                       <div>
-                        <h3 className="text-sm font-bold text-white">{etf?.nameKr}</h3>
-                        <p className="text-xs text-slate-500">{etf?.name} · {h.ticker}</p>
+                        <h3 className="text-sm font-bold text-white">
+                          {kEtf?.isRecommended && <Star className="w-3 h-3 text-amber-400 inline mr-1 -mt-0.5" />}
+                          {getETFName(h.ticker)}
+                        </h3>
+                        <p className="text-xs text-slate-500">{kEtf?.name || h.ticker} · {h.ticker}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-lg font-bold text-white">{formatNum(currentValue)}원</p>
@@ -890,7 +1230,8 @@ export default function SimulationPage() {
                         </div>
                       </div>
                     )}
-                  </div>
+                    <p className="text-[10px] text-blue-400 mt-2 text-right">차트/매매 보기 →</p>
+                  </button>
                 );
               })}
 
@@ -901,16 +1242,18 @@ export default function SimulationPage() {
                   <div className="bg-slate-500 h-full" style={{ width: `${(user?.balance || 0) / totalAssets * 100}%` }} />
                   {user?.holdings.map((h) => {
                     const val = h.shares * getTradePrice(h.ticker);
-                    const cat = etfRecommendations.find((e) => e.ticker === h.ticker)?.category;
-                    const color = cat === "방어형" ? "bg-cyan-500" : cat === "공격형" ? "bg-red-500" : "bg-amber-500";
-                    return <div key={h.ticker} className={`${color} h-full`} style={{ width: `${val / totalAssets * 100}%` }} />;
+                    const cat = getETFByTicker(h.ticker)?.category || "기타";
+                    const colorMap: Record<string, string> = { "국내주식": "bg-blue-500", "해외주식": "bg-emerald-500", "채권": "bg-cyan-500", "원자재": "bg-amber-500", "인버스/레버리지": "bg-red-500", "통화": "bg-purple-500", "리츠": "bg-pink-500", "테마": "bg-orange-500" };
+                    return <div key={h.ticker} className={`${colorMap[cat] || "bg-slate-400"} h-full`} style={{ width: `${val / totalAssets * 100}%` }} />;
                   })}
                 </div>
                 <div className="flex flex-wrap gap-3 text-[10px]">
                   <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-slate-500" /> 현금 {((user?.balance || 0) / totalAssets * 100)?.toFixed(1) ?? "0.0"}%</span>
-                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-cyan-500" /> 방어형</span>
-                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-red-500" /> 공격형</span>
-                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-amber-500" /> 헤지형</span>
+                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-blue-500" /> 국내주식</span>
+                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-emerald-500" /> 해외주식</span>
+                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-cyan-500" /> 채권</span>
+                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-amber-500" /> 원자재</span>
+                  <span className="flex items-center gap-1 text-slate-400"><span className="w-2 h-2 rounded-full bg-red-500" /> 인버스</span>
                 </div>
               </div>
             </div>
@@ -932,13 +1275,12 @@ export default function SimulationPage() {
           ) : (
             <div className="space-y-2">
               {user?.trades.map((trade, idx) => {
-                const etf = etfRecommendations.find((e) => e.ticker === trade.ticker);
                 return (
                   <div key={idx} className="flex items-center justify-between bg-slate-800/40 rounded-lg px-4 py-3">
                     <div className="flex items-center gap-3">
                       <span className={`text-xs px-2 py-1 rounded font-bold ${trade.type === "매수" ? "bg-red-600/20 text-red-300 border border-red-500/30" : "bg-blue-600/20 text-blue-300 border border-blue-500/30"}`}>{trade.type}</span>
                       <div>
-                        <p className="text-sm font-medium text-white">{etf?.nameKr || trade.ticker}</p>
+                        <p className="text-sm font-medium text-white">{getETFName(trade.ticker)}</p>
                         <p className="text-[10px] text-slate-500">{trade.date}</p>
                       </div>
                     </div>
@@ -953,6 +1295,111 @@ export default function SimulationPage() {
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Ranking Tab ── */}
+      {activeTab === "ranking" && (
+        <div className="space-y-4">
+          {/* My Status */}
+          <div className="bg-gradient-to-r from-amber-900/20 to-yellow-900/20 border border-amber-800/30 rounded-2xl p-5">
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <div className="flex items-center gap-3">
+                <Trophy className="w-6 h-6 text-amber-400" />
+                <div>
+                  <h2 className="text-lg font-bold text-white">투자 랭킹</h2>
+                  <p className="text-xs text-slate-400">모든 참가자의 수익률이 자동으로 공개됩니다</p>
+                </div>
+              </div>
+              <div className="text-right">
+                <p className="text-xs text-slate-500">내 수익률</p>
+                <p className={`text-xl font-bold ${totalPnL >= 0 ? "text-red-400" : "text-blue-400"}`}>
+                  {totalPnL >= 0 ? "+" : ""}{totalPnLPct}%
+                </p>
+                <p className="text-[10px] text-slate-500">총자산 {formatKRW(totalAssets)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Leaderboard */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2">
+                <Trophy className="w-5 h-5 text-yellow-400" /> 투자 랭킹
+              </h2>
+              <button onClick={fetchLeaderboard} disabled={lbLoading} className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors">
+                <RefreshCw className={`w-3.5 h-3.5 ${lbLoading ? "animate-spin" : ""}`} /> 새로고침
+              </button>
+            </div>
+
+            {lbLoading && leaderboard.length === 0 ? (
+              <div className="text-center py-12">
+                <RefreshCw className="w-8 h-8 text-slate-600 mx-auto mb-3 animate-spin" />
+                <p className="text-slate-500 text-sm">랭킹 불러오는 중...</p>
+              </div>
+            ) : leaderboard.length === 0 ? (
+              <div className="text-center py-12">
+                <Trophy className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+                <p className="text-slate-500">아직 공개된 수익률이 없습니다.</p>
+                <p className="text-xs text-slate-600 mt-1">위 &quot;랭킹 공개&quot; 버튼을 눌러 첫 번째 참가자가 되어보세요!</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {leaderboard.map((entry, idx) => {
+                  const isMe = entry.nickname === user?.nickname;
+                  const rankIcon = idx === 0 ? <Crown className="w-5 h-5 text-yellow-400" /> : idx === 1 ? <Medal className="w-5 h-5 text-slate-300" /> : idx === 2 ? <Medal className="w-5 h-5 text-amber-600" /> : null;
+
+                  return (
+                    <div
+                      key={entry.nickname}
+                      className={`flex items-center gap-4 rounded-xl px-4 py-3.5 transition-colors ${isMe ? "bg-blue-900/20 border border-blue-700/30" : "bg-slate-800/40 border border-transparent hover:border-slate-700/50"}`}
+                    >
+                      {/* Rank */}
+                      <div className="w-10 flex-shrink-0 text-center">
+                        {rankIcon || <span className="text-sm font-bold text-slate-500">{idx + 1}</span>}
+                      </div>
+
+                      {/* User Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-bold text-white truncate">
+                            {entry.nickname}
+                            {isMe && <span className="ml-1.5 text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded">나</span>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 mt-0.5">
+                          <span className="text-[10px] text-slate-500">
+                            {entry.holdingsCount}종목 · {entry.tradeCount}건 거래
+                          </span>
+                          {entry.topHolding && (
+                            <span className="text-[10px] text-slate-600">
+                              주력: {entry.topHolding}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Returns */}
+                      <div className="text-right flex-shrink-0">
+                        <p className={`text-base font-bold ${entry.totalPnLPct >= 0 ? "text-red-400" : "text-blue-400"}`}>
+                          {entry.totalPnLPct >= 0 ? "+" : ""}{entry.totalPnLPct.toFixed(2)}%
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {formatKRW(entry.totalAssets)}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-4 pt-4 border-t border-slate-800">
+              <p className="text-[10px] text-slate-600 text-center">
+                초기 자금 1,000만원 기준 · 수익률순 정렬 · 랭킹 공개 시 최신 데이터로 갱신됩니다
+              </p>
+            </div>
+          </div>
         </div>
       )}
     </div>

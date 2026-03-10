@@ -2,6 +2,9 @@ import { Map, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { issues } from "@/data/issues";
 import IssueCard from "@/components/IssueCard";
 
+// 12시간마다 자동 업데이트
+export const revalidate = 43200;
+
 const regions = ["전체", ...Array.from(new Set(issues.map((i) => i.region)))];
 
 export default function IssuesPage() {

@@ -68,16 +68,17 @@ export interface PredictionRecord {
 /**
  * 8축 신뢰도 원점수 (각 0-100)
  * 최종 credibilityScore는 lib/credibility.ts의 가중합으로 산출
+ * ★ 과거 적중률이 55%로 압도적 — 맞춘 전문가의 의견이 가장 중요
  */
 export interface ExpertRawScores {
-  domainFitScore: number;      // 전문 적합성 (가중치 25%)
-  accuracyScore: number;       // 과거 적중도 (가중치 20%)
-  evidenceScore: number;       // 근거 품질 (가중치 20%)
-  institutionScore: number;    // 기관 신뢰도 (가중치 10%)
-  consistencyScore: number;    // 논리 일관성 (가중치 10%)
-  recencyScore: number;        // 최신성 (가중치 5%)
-  publicRatingScore: number;   // 대중 평가 (가중치 5%)
-  biasScore: number;           // 편향 보정: 높을수록 편향 없음 (가중치 5%)
+  domainFitScore: number;      // 전문 적합성 (가중치 15%)
+  accuracyScore: number;       // 과거 적중도 ★★★ (가중치 55%) — 압도적 핵심
+  evidenceScore: number;       // 근거 품질 (가중치 12%)
+  institutionScore: number;    // 기관 신뢰도 (가중치 5%)
+  consistencyScore: number;    // 논리 일관성 (가중치 6%)
+  recencyScore: number;        // 최신성 (가중치 4%)
+  publicRatingScore: number;   // 대중 평가 (가중치 1%)
+  biasScore: number;           // 편향 보정: 높을수록 편향 없음 (가중치 2%)
 }
 
 export interface Expert extends ExpertRawScores {
@@ -289,7 +290,7 @@ export interface IssueAccuracy {
 
 // ─── 자산 예측 시스템 (투자자 중심 재구성) ──────────────────────────────────
 
-export type AssetCategory = "금리" | "환율" | "원자재" | "지수";
+export type AssetCategory = "금리" | "환율" | "원자재" | "지수" | "산업";
 
 export type PredictionDirection = "상승" | "하락" | "보합" | "변동성확대";
 
@@ -380,4 +381,97 @@ export interface AssetAccuracy {
   partial: number;
   incorrect: number;
   accuracyRate: number;
+}
+
+// ─── AI 예측 사이클 (3일 주기) ─────────────────────────────────────────────
+
+export interface AICyclePrediction {
+  id: string;
+  assetId: string;
+  direction: PredictionDirection;
+  probability: number;            // 0-100 (AI 예측 확률)
+  confidence: number;             // 0-100 (모델 확신도)
+  targetRange?: { low: number; high: number };
+  rationale: string;              // 예측 근거 요약
+  keyEvidence: string[];          // 핵심 근거 목록
+  sources: { title: string; url?: string; date: string }[];
+  supportingExpertIds: string[];  // 이 예측을 지지하는 대표 전문가 (상위 노출용)
+  opposingExpertIds: string[];    // 이 예측에 반대하는 대표 전문가 (상위 노출용)
+  scenario: string;               // 시나리오 설명
+  startPrice: number;             // 예측 시작 시점 자산 가격
+  // ─── 전문가 참여 통계 (100K 풀 기반) ───
+  expertStats?: {
+    totalParticipants: number;    // 해당 자산에 의견을 낸 전문가 수
+    bullCount: number;            // 상승 예측 전문가 수
+    bearCount: number;            // 하락 예측 전문가 수
+    neutralCount: number;         // 보합/변동성 예측 전문가 수
+    avgAccuracyOfBull: number;    // 상승 예측 전문가들의 평균 과거 적중률
+    avgAccuracyOfBear: number;    // 하락 예측 전문가들의 평균 과거 적중률
+    avgAccuracyOfNeutral: number; // 보합 예측 전문가들의 평균 과거 적중률
+    topAccuracyDirection: PredictionDirection; // 적중률 상위 전문가들이 가장 많이 택한 방향
+    weightedProbability: number;  // 적중률 가중 확률 (이것이 최종 AI 확률의 핵심 근거)
+  };
+}
+
+export interface AIPredictionCycle {
+  id: string;
+  cycleNumber: number;            // 사이클 번호
+  startDate: string;              // 사이클 시작일
+  endDate: string;                // 사이클 종료일 (3일 후)
+  status: "active" | "evaluating" | "completed";
+  predictions: AICyclePrediction[];
+  createdAt: string;
+}
+
+export interface AICycleResult {
+  cycleId: string;
+  assetId: string;
+  predictionId: string;
+  predictedDirection: PredictionDirection;
+  actualDirection?: PredictionDirection;
+  predictedProbability: number;
+  result: "적중" | "부분적중" | "불일치" | "미결";
+  actualOutcome?: string;
+  evaluatedAt?: string;
+  newsEvidence?: string[];        // 적중/불일치 판단 근거 뉴스
+}
+
+export interface AICyclePerformance {
+  totalCycles: number;
+  totalPredictions: number;
+  correct: number;
+  partial: number;
+  incorrect: number;
+  pending: number;
+  accuracyRate: number;
+  recentCycles: {
+    cycleId: string;
+    startDate: string;
+    endDate: string;
+    accuracyRate: number;
+    predictions: number;
+  }[];
+  byAsset: {
+    assetId: string;
+    assetName: string;
+    predictions: number;
+    correct: number;
+    partial: number;
+    incorrect: number;
+    accuracyRate: number;
+  }[];
+}
+
+export interface VerificationLog {
+  id: string;
+  timestamp: string;
+  assetId: string;
+  cycleId: string;
+  predictionId: string;
+  newsHeadline: string;
+  newsSource: string;
+  newsUrl?: string;
+  relevance: "high" | "medium" | "low";
+  impact: "supports" | "contradicts" | "neutral";
+  summary: string;
 }
