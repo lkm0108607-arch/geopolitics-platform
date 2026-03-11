@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { useAIPredictions } from "@/hooks/useAIPredictions";
 import type { AIPrediction } from "@/hooks/useAIPredictions";
+import { useLivePrices } from "@/components/LivePriceProvider";
 import { getAssetById } from "@/data/assets";
 
 // ── 투자 시그널 타입 ──────────────────────────────────────────────────────────
@@ -39,6 +40,7 @@ interface SolutionItem {
   assetId: string;
   name: string;
   category: string;
+  unit: string;
   signal: InvestmentSignal;
   // 핵심 투자 솔루션 데이터 (사용자에게 보이는 것)
   actionLabel: string;       // "지금 매수 적기" | "매수 대기" | "매도 권장" 등
@@ -199,6 +201,7 @@ function buildSolution(pred: AIPrediction): SolutionItem {
     assetId: pred.assetId,
     name: asset?.name ?? pred.assetId,
     category: asset?.category ?? "",
+    unit: asset?.unit ?? "",
     signal,
     actionLabel: getActionLabel(signal, verdict),
     targetReturn,
@@ -248,6 +251,7 @@ const verdictBg: Record<string, string> = {
 
 export default function InvestmentPage() {
   const { predictions, cycleId, isLoading, error, refresh } = useAIPredictions();
+  const { prices, lastFetched, isLoading: pricesLoading } = useLivePrices();
   const [activeTab, setActiveTab] = useState<"action" | "buy" | "sell" | "hold">("action");
   const [showCount, setShowCount] = useState(15);
 
@@ -377,9 +381,15 @@ export default function InvestmentPage() {
         )}
 
         {/* ── 자동 업데이트 안내 ────────────────── */}
-        <div className="flex items-center gap-2 text-[11px] text-slate-500 bg-slate-900/50 rounded-lg px-4 py-2 border border-slate-800/50">
-          <Timer className="w-3.5 h-3.5 text-emerald-400" />
-          <span>매일 오후 2시 AI 자동 분석 · 예측 후 학습으로 정확도 지속 개선 · 5개 AI 모델 토론 + 30인 AI 배심원 기반</span>
+        <div className="flex items-center justify-between text-[11px] text-slate-500 bg-slate-900/50 rounded-lg px-4 py-2 border border-slate-800/50">
+          <div className="flex items-center gap-2">
+            <Timer className="w-3.5 h-3.5 text-emerald-400" />
+            <span>매일 오후 2시 AI 자동 분석 · 예측 후 학습으로 정확도 지속 개선</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`w-1.5 h-1.5 rounded-full ${pricesLoading ? "bg-yellow-400 animate-pulse" : "bg-emerald-400"}`} />
+            <span>시세 {lastFetched ? `${lastFetched.toLocaleTimeString("ko-KR")} 갱신` : "로딩중"} · 1분 간격</span>
+          </div>
         </div>
 
         {/* ── 포트폴리오 제안 ────────────────────── */}
@@ -395,20 +405,38 @@ export default function InvestmentPage() {
                   <thead>
                     <tr className="text-slate-500 text-xs border-b border-slate-800">
                       <th className="text-left px-5 py-3 font-medium">종목</th>
+                      <th className="text-right px-3 py-3 font-medium">현재가</th>
                       <th className="text-center px-3 py-3 font-medium">판단</th>
                       <th className="text-center px-3 py-3 font-medium">기대 수익</th>
-                      <th className="text-center px-3 py-3 font-medium">매도 시점</th>
+                      <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">매도 시점</th>
                       <th className="text-center px-3 py-3 font-medium hidden md:table-cell">손절선</th>
                       <th className="text-center px-3 py-3 font-medium hidden lg:table-cell">리스크</th>
                       <th className="text-right px-5 py-3 font-medium">비중</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {portfolio.map((s) => (
+                    {portfolio.map((s) => {
+                      const lp = prices.get(s.assetId);
+                      const price = lp?.price && lp.price > 0 ? lp.price : null;
+                      const change = price ? lp?.changePercent : null;
+                      return (
                       <tr key={s.assetId} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
                         <td className="px-5 py-3">
                           <span className="font-medium text-white">{s.name}</span>
                           <span className="text-[10px] text-slate-500 ml-2">{s.category}</span>
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          {price ? (
+                            <div>
+                              <span className="text-sm font-mono text-white">{price.toLocaleString("ko-KR")}</span>
+                              {s.unit && <span className="text-[10px] text-slate-500 ml-0.5">{s.unit}</span>}
+                              {change != null && (
+                                <p className={`text-[10px] font-mono ${change > 0 ? "text-red-400" : change < 0 ? "text-blue-400" : "text-slate-500"}`}>
+                                  {change > 0 ? "+" : ""}{change.toFixed(2)}%
+                                </p>
+                              )}
+                            </div>
+                          ) : <span className="text-[10px] text-slate-600">-</span>}
                         </td>
                         <td className="px-3 py-3 text-center">
                           <span className={`text-[11px] px-2 py-0.5 rounded-full border ${verdictBg[s.timingVerdict]} ${verdictColors[s.timingVerdict]} font-medium`}>
@@ -420,7 +448,7 @@ export default function InvestmentPage() {
                             {s.targetReturnNum > 0 ? "+" : ""}{s.targetReturnNum.toFixed(1)}%
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-center">
+                        <td className="px-3 py-3 text-center hidden sm:table-cell">
                           {s.peakDate ? (
                             <span className="text-xs font-mono text-slate-300">{s.peakDate} <span className="text-[10px] text-slate-500">({s.peakDays}일 후)</span></span>
                           ) : <span className="text-[10px] text-slate-600">-</span>}
@@ -437,7 +465,8 @@ export default function InvestmentPage() {
                           {s.weight}%
                         </td>
                       </tr>
-                    ))}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -489,9 +518,10 @@ export default function InvestmentPage() {
         {/* ── 솔루션 카드 ────────────────────────── */}
         {displayed.length > 0 && (
           <section className="space-y-3">
-            {displayed.map((item) => (
-              <SolutionCard key={item.assetId} item={item} />
-            ))}
+            {displayed.map((item) => {
+              const lp = prices.get(item.assetId);
+              return <SolutionCard key={item.assetId} item={item} livePrice={lp?.price && lp.price > 0 ? lp.price : undefined} liveChange={lp?.price && lp.price > 0 ? lp.changePercent : undefined} />;
+            })}
           </section>
         )}
 
@@ -581,7 +611,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-function SolutionCard({ item }: { item: SolutionItem }) {
+function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; livePrice?: number; liveChange?: number }) {
   const [open, setOpen] = useState(false);
   const cfg = signalConfig[item.signal];
   const Icon = cfg.icon;
@@ -601,7 +631,19 @@ function SolutionCard({ item }: { item: SolutionItem }) {
                 {item.actionLabel}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 mt-0.5">{item.summary}</p>
+            <div className="flex items-center gap-3 mt-0.5">
+              {livePrice && (
+                <span className="text-[12px] font-mono text-slate-300">
+                  {livePrice.toLocaleString("ko-KR")}{item.unit ? ` ${item.unit}` : ""}
+                  {liveChange != null && (
+                    <span className={`ml-1.5 ${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : "text-slate-500"}`}>
+                      {liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%
+                    </span>
+                  )}
+                </span>
+              )}
+              <span className="text-[11px] text-slate-500">{item.summary}</span>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-4 shrink-0">
