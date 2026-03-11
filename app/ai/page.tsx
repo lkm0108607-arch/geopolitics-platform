@@ -32,6 +32,7 @@ import {
 
 import { useAIHistory } from "@/hooks/useAIHistory";
 import { useAIPredictions } from "@/hooks/useAIPredictions";
+import { getAssetById } from "@/data/assets";
 import ConfidenceBar from "@/components/ai/ConfidenceBar";
 
 /* ── Model definitions ── */
@@ -170,7 +171,14 @@ const LEARNING_STEPS = [
 
 export default function AISystemPage() {
   const { accuracy, learningLogs, weightHistory, isLoading: historyLoading } = useAIHistory();
-  const { predictions, isLoading: predictionsLoading } = useAIPredictions();
+  const { predictions: rawPredictions, isLoading: predictionsLoading } = useAIPredictions();
+
+  // 미등록 자산 제외
+  const predictions = useMemo(() => rawPredictions.filter((p) => {
+    if (p.assetId.startsWith("etf-")) return true;
+    const asset = getAssetById(p.assetId);
+    return asset && asset.name !== p.assetId;
+  }), [rawPredictions]);
 
   const isLoading = historyLoading || predictionsLoading;
   const [modelSortBy, setModelSortBy] = useState<"default" | "weight" | "upVotes" | "avgConf">("default");

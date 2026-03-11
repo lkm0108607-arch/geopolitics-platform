@@ -57,9 +57,18 @@ export default function HomePage() {
     });
   };
 
+  // 미등록 자산 제외 (semiconductor, ev-battery 등)
+  const validPredictions = useMemo(() => {
+    return predictions.filter((p) => {
+      if (p.assetId.startsWith("etf-")) return true;
+      const asset = getAssetById(p.assetId);
+      return asset && asset.name !== p.assetId;
+    });
+  }, [predictions]);
+
   // Sort predictions
   const sortedPredictions = useMemo(() => {
-    return [...predictions].sort((a, b) => {
+    return [...validPredictions].sort((a, b) => {
       switch (sortBy) {
         case "probability":
           return b.probability - a.probability;
@@ -75,14 +84,14 @@ export default function HomePage() {
           return (DIRECTION_ORDER[a.direction] ?? 9) - (DIRECTION_ORDER[b.direction] ?? 9);
       }
     });
-  }, [predictions, sortBy]);
+  }, [validPredictions, sortBy]);
 
   // Compute average confidence
   const avgConfidence = useMemo(() => {
-    if (predictions.length === 0) return 0;
-    const sum = predictions.reduce((acc, p) => acc + p.confidence, 0);
-    return Math.round(sum / predictions.length);
-  }, [predictions]);
+    if (validPredictions.length === 0) return 0;
+    const sum = validPredictions.reduce((acc, p) => acc + p.confidence, 0);
+    return Math.round(sum / validPredictions.length);
+  }, [validPredictions]);
 
   // Compute learning cycle count from logs
   const learningCycleCount = useMemo(() => {
@@ -182,7 +191,7 @@ export default function HomePage() {
                 />
                 <StatCard
                   label="활성 예측"
-                  value={predictions.length}
+                  value={validPredictions.length}
                   icon={Activity}
                   subtext={
                     cycleId ? `사이클 ${cycleId}` : "대기 중"
