@@ -177,6 +177,76 @@ async function loadFromSupabase(
 }
 
 /**
+ * 네이버 금융 차트 API에서 ETF/주식 과거 데이터를 가져온다.
+ * Supabase에 히스토리가 부족할 때 fallback으로 사용.
+ */
+async function fetchNaverChart(ticker: string): Promise<PriceBar[]> {
+  try {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - 120); // 120일치
+
+    const startStr = start.toISOString().slice(0, 10).replace(/-/g, "");
+    const endStr = end.toISOString().slice(0, 10).replace(/-/g, "");
+
+    const url = `https://fchart.stock.naver.com/siseJson.nhn?symbol=${ticker}&requestType=1&startTime=${startStr}&endTime=${endStr}&timeframe=day`;
+
+    const res = await fetch(url, {
+      headers: {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (!res.ok) return [];
+
+    const text = await res.text();
+    // 네이버 차트 응답: 날짜, 시가, 고가, 저가, 종가, 거래량 형태의 배열
+    const lines = text.trim().split("\n").slice(1); // 헤더 제거
+    const bars: PriceBar[] = [];
+
+    for (const line of lines) {
+      const cleaned = line.replace(/'/g, "").trim();
+      if (!cleaned || cleaned.startsWith("[")) continue;
+      const parts = cleaned.replace(/[\[\]]/g, "").split(",").map((s) => s.trim());
+      if (parts.length < 5) continue;
+
+      const close = parseFloat(parts[4]);
+      const high = parseFloat(parts[2]);
+      const low = parseFloat(parts[3]);
+      const volume = parts.length >= 6 ? parseFloat(parts[5]) : undefined;
+
+      if (isNaN(close) || close <= 0) continue;
+
+      bars.push({
+        close,
+        high: isNaN(high) ? undefined : high,
+        low: isNaN(low) ? undefined : low,
+        volume: volume && !isNaN(volume) ? volume : undefined,
+      });
+    }
+
+    return bars;
+  } catch (err) {
+    console.error(`네이버 차트 데이터 가져오기 실패 (${ticker}):`, err);
+    return [];
+  }
+}
+
+/**
+ * 네이버 ticker로 히스토리를 가져와서 assetDataMap에 추가
+ */
+async function loadFromNaverChart(
+  assetId: string,
+  ticker: string,
+  assetDataMap: Record<string, PriceBar[]>,
+): Promise<void> {
+  const bars = await fetchNaverChart(ticker);
+  if (bars.length >= 20) {
+    assetDataMap[assetId] = bars;
+  }
+}
+
+/**
  * 사이클 ID 생성: ai-cycle-YYYY-MM-DD
  */
 function generateCycleId(): string {
@@ -246,18 +316,26 @@ export async function POST() {
       }
     }
 
-    // 3b. 한국 자산 (네이버 금융): Supabase 히스토리 사용 (네이버 실시간으로 축적됨)
+    // 3b. 한국 자산 (네이버 금융): Supabase 히스토리 → 없으면 네이버 차트 API fallback
     for (const assetId of NAVER_ASSET_IDS) {
       await loadFromSupabase(assetId, assetDataMap);
+      if (!assetDataMap[assetId] || assetDataMap[assetId].length < 20) {
+        // Supabase에 데이터 부족 → 네이버 차트에서 직접 가져오기
+        const ticker = assetId.startsWith("etf-") ? assetId.replace("etf-", "") : null;
+        if (ticker) {
+          await loadFromNaverChart(assetId, ticker, assetDataMap);
+        }
+      }
     }
 
-    // 3c. 산업 자산: 대표 ETF 데이터를 프록시로 사용
+    // 3c. 산업 자산: 대표 ETF 데이터 프록시 → 없으면 네이버 차트 fallback
     for (const [industryId, proxyEtfId] of Object.entries(INDUSTRY_PROXY_MAP)) {
       if (assetDataMap[proxyEtfId] && assetDataMap[proxyEtfId].length >= 20) {
         assetDataMap[industryId] = assetDataMap[proxyEtfId];
       } else {
-        // 프록시 ETF 데이터도 없으면 Supabase에서 직접 시도
-        await loadFromSupabase(industryId, assetDataMap);
+        // 프록시 ETF의 ticker로 네이버 차트에서 가져오기
+        const ticker = proxyEtfId.replace("etf-", "");
+        await loadFromNaverChart(industryId, ticker, assetDataMap);
       }
     }
 
