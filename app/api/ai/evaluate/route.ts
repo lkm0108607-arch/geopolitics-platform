@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { learn } from "@/lib/ai/learner";
 import type { PredictionOutcome } from "@/lib/ai/learner";
 import type { Direction } from "@/lib/ai/models";
-import type { AIPrediction, SubModelVotes } from "@/lib/ai/ensemble";
+import type { AIPrediction, EnsembleConfig, SubModelVotes } from "@/lib/ai/ensemble";
 import {
   getLatestPredictions,
   savePredictionResult,
@@ -70,9 +70,6 @@ export async function POST(request: Request) {
 
     const cycleId = predictions[0].cycle_id;
 
-    // 2. 현재 모델 가중치 조회
-    let currentWeights = await getModelWeights();
-
     // 3. 현재 시장 데이터 가져오기 (네이버 금융 + Yahoo Finance)
     const priceResults: Record<string, CurrentPriceData | null> = {};
 
@@ -87,9 +84,10 @@ export async function POST(request: Request) {
       await Promise.allSettled(pricePromises);
     }
 
-    // 4. 각 예측에 대해 평가 수행
+    // 4. 각 예측에 대해 개별 평가 + 자산별 독립 강화학습
     const evaluationResults = [];
     const learningResults = [];
+    const perAssetWeights: Record<string, EnsembleConfig> = {};
 
     for (const pred of predictions) {
       const priceData = priceResults[pred.asset_id];
@@ -120,7 +118,9 @@ export async function POST(request: Request) {
         console.error(`결과 저장 실패 (${pred.asset_id}):`, err);
       }
 
-      // 5. 학습 실행
+      // 5. 자산별 개별 가중치 로드 → 학습 → 개별 저장
+      const assetWeights = await getModelWeights(pred.asset_id);
+
       const predictionForLearner: AIPrediction = {
         assetId: pred.asset_id,
         direction: pred.direction as Direction,
@@ -138,11 +138,22 @@ export async function POST(request: Request) {
         actualReturnPercent: priceData.changePercent,
       };
 
-      const learningResult = learn(outcome, currentWeights);
+      const learningResult = learn(outcome, assetWeights);
       learningResults.push(learningResult);
 
-      // 가중치 업데이트 (누적)
-      currentWeights = learningResult.weightAdjustment;
+      // 자산별 개별 가중치 저장
+      const updatedWeights = learningResult.weightAdjustment;
+      perAssetWeights[pred.asset_id] = updatedWeights;
+
+      try {
+        await saveModelWeights(
+          updatedWeights,
+          `${pred.asset_id} 개별 학습: ${wasCorrect ? "정답" : "오답"} (${priceData.changePercent.toFixed(2)}%)`,
+          pred.asset_id,
+        );
+      } catch (err) {
+        console.error(`자산별 가중치 저장 실패 (${pred.asset_id}):`, err);
+      }
 
       // 학습 로그 저장
       try {
@@ -166,10 +177,17 @@ export async function POST(request: Request) {
         actualChangePercent: priceData.changePercent,
         wasCorrect,
         lesson: learningResult.lesson,
+        weights: {
+          momentum: updatedWeights.momentumWeight,
+          meanReversion: updatedWeights.meanReversionWeight,
+          volatility: updatedWeights.volatilityWeight,
+          correlation: updatedWeights.correlationWeight,
+          fundamental: updatedWeights.fundamentalWeight,
+        },
       });
     }
 
-    // 6. 최종 가중치 저장
+    // 6. 통계 계산
     const evaluated = evaluationResults.filter((r) => r.status === "evaluated");
     const correctCount = evaluated.filter(
       (r) => "wasCorrect" in r && r.wasCorrect,
@@ -178,14 +196,6 @@ export async function POST(request: Request) {
       evaluated.length > 0
         ? Math.round((correctCount / evaluated.length) * 100)
         : 0;
-
-    const reason = `사이클 ${cycleId} 평가 완료: 정확도 ${accuracy}% (${correctCount}/${evaluated.length})`;
-
-    try {
-      await saveModelWeights(currentWeights, reason);
-    } catch (err) {
-      console.error("가중치 저장 실패:", err);
-    }
 
     // 7. 응답 반환
     return NextResponse.json({
@@ -198,12 +208,7 @@ export async function POST(request: Request) {
         skipped: evaluationResults.filter((r) => r.status === "skipped").length,
         correct: correctCount,
         accuracy,
-      },
-      updatedWeights: {
-        momentum: currentWeights.momentumWeight,
-        meanReversion: currentWeights.meanReversionWeight,
-        volatility: currentWeights.volatilityWeight,
-        correlation: currentWeights.correlationWeight,
+        perAssetLearning: true,
       },
       results: evaluationResults,
     });

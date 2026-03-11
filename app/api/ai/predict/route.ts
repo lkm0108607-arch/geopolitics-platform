@@ -275,8 +275,8 @@ export async function POST() {
       }
     }
 
-    // 2. 현재 모델 가중치 조회
-    const weights = await getModelWeights();
+    // 2. 글로벌 기본 가중치 (자산별 가중치가 없을 때 fallback)
+    const globalWeights = await getModelWeights();
 
     // 3. 사용 가능한 자산 데이터 수집
     const assetDataMap: Record<string, PriceBar[]> = {};
@@ -341,6 +341,9 @@ export async function POST() {
     for (const [assetId, data] of Object.entries(assetDataMap)) {
       if (data.length < 20) continue; // 최소 20개 데이터 포인트 필요
 
+      // 자산별 개별 가중치 로드 (없으면 글로벌 fallback)
+      const assetWeights = await getModelWeights(assetId);
+
       const otherAssets = crossAssets.filter((ca) => ca.assetId !== assetId);
 
       // 펀더멘털 시그널 생성 (수집 데이터가 있는 경우)
@@ -367,7 +370,7 @@ export async function POST() {
         assetId,
         data,
         crossAssets: otherAssets,
-        config: weights,
+        config: assetWeights,
         cycleId,
         collectedData,
         fundamentalSignals,
@@ -403,13 +406,14 @@ export async function POST() {
       cycleId,
       totalAssets: predictions.length,
       generatedAt: new Date().toISOString(),
-      weights: {
-        momentum: weights.momentumWeight,
-        meanReversion: weights.meanReversionWeight,
-        volatility: weights.volatilityWeight,
-        correlation: weights.correlationWeight,
-        fundamental: weights.fundamentalWeight,
+      globalFallbackWeights: {
+        momentum: globalWeights.momentumWeight,
+        meanReversion: globalWeights.meanReversionWeight,
+        volatility: globalWeights.volatilityWeight,
+        correlation: globalWeights.correlationWeight,
+        fundamental: globalWeights.fundamentalWeight,
       },
+      perAssetLearning: true,
       macroDataAvailable: collectedData !== null,
       predictions,
     });

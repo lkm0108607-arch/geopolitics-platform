@@ -48,6 +48,7 @@ export interface PredictionResultRow {
 
 export interface ModelWeightsRow {
   id?: string;
+  asset_id?: string | null;  // null = 글로벌, 'etf-069500' = 자산별 개별 가중치
   momentum_weight: number;
   mean_reversion_weight: number;
   volatility_weight: number;
@@ -250,10 +251,48 @@ export async function savePredictionResult(result: {
 
 // ─── Model Weights ────────────────────────────────────────────────────────────
 
+/** 기본 가중치 (자산별 데이터가 없을 때 fallback) */
+const DEFAULT_WEIGHTS: EnsembleConfig = {
+  momentumWeight: 0.25,
+  meanReversionWeight: 0.20,
+  volatilityWeight: 0.15,
+  correlationWeight: 0.20,
+  fundamentalWeight: 0.20,
+};
+
 /**
- * 현재 앙상블 가중치를 조회한다.
+ * 앙상블 가중치를 조회한다.
+ * assetId가 주어지면 해당 자산의 개별 가중치를 조회하고,
+ * 없으면 글로벌 가중치 → 기본값 순으로 fallback.
  */
-export async function getModelWeights(): Promise<EnsembleConfig> {
+export async function getModelWeights(assetId?: string): Promise<EnsembleConfig> {
+  // 1. 자산별 가중치 조회 시도
+  if (assetId) {
+    try {
+      const { data, error } = await supabase
+        .from("model_weights")
+        .select("*")
+        .eq("asset_id", assetId)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .single();
+
+      if (!error && data) {
+        const row = data as ModelWeightsRow;
+        return {
+          momentumWeight: Number(row.momentum_weight),
+          meanReversionWeight: Number(row.mean_reversion_weight),
+          volatilityWeight: Number(row.volatility_weight),
+          correlationWeight: Number(row.correlation_weight),
+          fundamentalWeight: Number(row.fundamental_weight ?? 0.20),
+        };
+      }
+    } catch {
+      // asset_id 컬럼이 없을 수 있음 → 글로벌 fallback
+    }
+  }
+
+  // 2. 글로벌 가중치 fallback (asset_id가 null이거나 없는 행)
   const { data, error } = await supabase
     .from("model_weights")
     .select("*")
@@ -261,16 +300,7 @@ export async function getModelWeights(): Promise<EnsembleConfig> {
     .limit(1)
     .single();
 
-  if (error || !data) {
-    // 기본 가중치 반환
-    return {
-      momentumWeight: 0.25,
-      meanReversionWeight: 0.20,
-      volatilityWeight: 0.15,
-      correlationWeight: 0.20,
-      fundamentalWeight: 0.20,
-    };
-  }
+  if (error || !data) return { ...DEFAULT_WEIGHTS };
 
   const row = data as ModelWeightsRow;
   return {
@@ -284,13 +314,16 @@ export async function getModelWeights(): Promise<EnsembleConfig> {
 
 /**
  * 갱신된 앙상블 가중치를 저장한다.
+ * assetId가 주어지면 해당 자산의 개별 가중치로 저장,
+ * 없으면 글로벌 가중치로 저장.
  */
 export async function saveModelWeights(
   weights: EnsembleConfig,
   reason: string,
+  assetId?: string,
 ): Promise<ModelWeightsRow> {
-  // fundamental_weight 컬럼이 없을 수 있으므로 먼저 전체 시도, 실패 시 fallback
-  const fullRow = {
+  // asset_id + fundamental_weight 포함 전체 시도
+  const fullRow: Record<string, unknown> = {
     momentum_weight: weights.momentumWeight,
     mean_reversion_weight: weights.meanReversionWeight,
     volatility_weight: weights.volatilityWeight,
@@ -298,6 +331,7 @@ export async function saveModelWeights(
     fundamental_weight: weights.fundamentalWeight,
     reason,
   };
+  if (assetId) fullRow.asset_id = assetId;
 
   let { data, error } = await supabase
     .from("model_weights")
@@ -305,20 +339,25 @@ export async function saveModelWeights(
     .select()
     .single();
 
-  // fundamental_weight 컬럼이 없으면 해당 필드 제외하고 재시도
-  if (error && error.message?.includes("fundamental_weight")) {
-    const fallbackRow = {
+  // asset_id 또는 fundamental_weight 컬럼이 없으면 단계별 fallback
+  if (error) {
+    const fallbackRow: Record<string, unknown> = {
       momentum_weight: weights.momentumWeight,
       mean_reversion_weight: weights.meanReversionWeight,
       volatility_weight: weights.volatilityWeight,
       correlation_weight: weights.correlationWeight,
-      reason,
+      reason: assetId ? `[asset:${assetId}] ${reason}` : reason,
     };
-    ({ data, error } = await supabase
-      .from("model_weights")
-      .insert(fallbackRow)
-      .select()
-      .single());
+    // fundamental_weight 컬럼 시도
+    try {
+      fallbackRow.fundamental_weight = weights.fundamentalWeight;
+      ({ data, error } = await supabase.from("model_weights").insert(fallbackRow).select().single());
+    } catch { /* ignore */ }
+    // 그래도 실패하면 최소 필드만
+    if (error) {
+      delete fallbackRow.fundamental_weight;
+      ({ data, error } = await supabase.from("model_weights").insert(fallbackRow).select().single());
+    }
   }
 
   if (error) throw new Error(`가중치 저장 실패: ${error.message}`);
