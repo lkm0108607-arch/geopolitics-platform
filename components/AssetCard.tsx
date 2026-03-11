@@ -1,6 +1,10 @@
+"use client";
+
 import Link from "next/link";
 import { TrendingUp, TrendingDown, Minus, Activity, ChevronRight } from "lucide-react";
 import type { Asset, AssetConsensusResult } from "@/types";
+import { useTranslation } from "@/components/LanguageProvider";
+import { formatValueLocale } from "@/lib/localeUnits";
 
 interface AssetCardProps {
   asset: Asset;
@@ -14,66 +18,60 @@ function getChangeColor(change: number): string {
   return "text-slate-400";
 }
 
-function getDirectionInfo(direction: string) {
+function getDirectionInfo(direction: string, t: any) {
   switch (direction) {
-    case "상승": return { icon: TrendingUp, color: "text-red-400", bg: "bg-red-400/10", border: "border-red-400/30", label: "상승" };
-    case "하락": return { icon: TrendingDown, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/30", label: "하락" };
-    case "변동성확대": return { icon: Activity, color: "text-yellow-400", bg: "bg-yellow-400/10", border: "border-yellow-400/30", label: "변동성" };
-    default: return { icon: Minus, color: "text-slate-400", bg: "bg-slate-400/10", border: "border-slate-400/30", label: "보합" };
+    case "상승": return { icon: TrendingUp, color: "text-red-400", bg: "bg-red-400/10", border: "border-red-400/30", label: t.factors.rising };
+    case "하락": return { icon: TrendingDown, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/30", label: t.factors.falling };
+    case "변동성확대": return { icon: Activity, color: "text-yellow-400", bg: "bg-yellow-400/10", border: "border-yellow-400/30", label: t.assets.volatility };
+    default: return { icon: Minus, color: "text-slate-400", bg: "bg-slate-400/10", border: "border-slate-400/30", label: t.assets.sideways };
   }
 }
 
-function formatValue(value: number, unit: string): string {
-  if (unit === "원/3.75g") return value.toLocaleString() + "원/돈";
-  if (unit === "원" || unit === "원/돈" || unit === "원/리터" || unit === "원/kg") return value.toLocaleString() + "원";
-  if (unit === "%") return value.toFixed(2) + "%";
-  if (unit === "달러/온스" || unit === "달러/배럴" || unit === "달러/톤") return "$" + value.toLocaleString();
-  if (unit === "pt" || unit === "지수") return value.toLocaleString();
-  if (unit === "엔") return "¥" + value.toFixed(1);
-  return value.toLocaleString() + unit;
-}
-
 export default function AssetCard({ asset, consensus, compact = false }: AssetCardProps) {
-  const dir = consensus ? getDirectionInfo(consensus.direction) : null;
+  const { locale, t } = useTranslation();
+  const dir = consensus ? getDirectionInfo(consensus.direction, t) : null;
   const DirIcon = dir?.icon || Minus;
+
+  const displayName = asset.name;
+  const secondaryName = asset.nameEn;
 
   return (
     <Link href={`/assets/${asset.id}`} className="block group">
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-600 hover:bg-slate-800/50 transition-all">
-        {/* 상단: 이름 + 현재가 */}
+        {/* Top: Name + Current price */}
         <div className="flex items-start justify-between gap-3 mb-3">
           <div className="flex-1 min-w-0">
-            <p className="text-xs text-slate-500 mb-0.5">{asset.nameEn}</p>
+            <p className="text-xs text-slate-500 mb-0.5">{secondaryName}</p>
             <h3 className="font-semibold text-white text-base group-hover:text-blue-300 transition-colors">
-              {asset.name}
+              {displayName}
             </h3>
           </div>
           <div className="text-right flex-shrink-0">
-            <p className="text-xl font-bold text-white">{formatValue(asset.currentValue, asset.unit)}</p>
+            <p className="text-xl font-bold text-white">{formatValueLocale(asset.currentValue, asset.unit, locale as any)}</p>
             <p className={`text-sm font-medium ${getChangeColor(asset.changePercent)}`}>
               {asset.changePercent > 0 ? "+" : ""}{asset.changePercent.toFixed(1)}%
             </p>
           </div>
         </div>
 
-        {/* 전문가 컨센서스 */}
+        {/* Expert consensus */}
         {consensus && (
           <div className={`flex items-center justify-between rounded-lg px-3 py-2 border ${dir!.bg} ${dir!.border} mb-3`}>
             <div className="flex items-center gap-2">
               <DirIcon className={`w-4 h-4 ${dir!.color}`} />
               <span className={`text-sm font-semibold ${dir!.color}`}>
-                전문가 컨센서스: {dir!.label}
+                {t.assets.consensus}: {dir!.label}
               </span>
             </div>
             <div className="flex items-center gap-3 text-xs">
               {consensus.bullCount > 0 && (
-                <span className="text-red-400">{consensus.bullCount}명 상승</span>
+                <span className="text-red-400">{consensus.bullCount}{t.home.people} {t.factors.rising}</span>
               )}
               {consensus.bearCount > 0 && (
-                <span className="text-blue-400">{consensus.bearCount}명 하락</span>
+                <span className="text-blue-400">{consensus.bearCount}{t.home.people} {t.factors.falling}</span>
               )}
               {consensus.neutralCount > 0 && (
-                <span className="text-slate-400">{consensus.neutralCount}명 보합</span>
+                <span className="text-slate-400">{consensus.neutralCount}{t.home.people} {t.assets.sideways}</span>
               )}
             </div>
           </div>
@@ -81,15 +79,15 @@ export default function AssetCard({ asset, consensus, compact = false }: AssetCa
 
         {!compact && consensus && (
           <div className="flex items-center gap-4 text-xs text-slate-500 mb-3">
-            <span>신뢰도 {consensus.confidence}%</span>
-            <span>참여 전문가 평균 {consensus.avgExpertCredibility}점</span>
+            <span>{t.assets.confidenceLabel} {consensus.confidence}%</span>
+            <span>{t.assets.avgExpertScore} {consensus.avgExpertCredibility}{t.assets.points}</span>
           </div>
         )}
 
-        {/* 하단 */}
+        {/* Bottom */}
         <div className="flex items-center justify-between pt-3 border-t border-slate-800">
           <span className="text-xs text-slate-500">
-            {asset.relatedFactorIds.length}개 변동요인
+            {t.assets.factorCount.replace("{count}", String(asset.relatedFactorIds.length))}
           </span>
           <ChevronRight className="w-4 h-4 text-slate-600 group-hover:text-slate-400 transition-colors" />
         </div>
@@ -98,4 +96,15 @@ export default function AssetCard({ asset, consensus, compact = false }: AssetCa
   );
 }
 
-export { formatValue, getDirectionInfo, getChangeColor };
+export { getChangeColor };
+
+function getDirectionInfoLegacy(direction: string) {
+  switch (direction) {
+    case "상승": return { icon: TrendingUp, color: "text-red-400", bg: "bg-red-400/10", border: "border-red-400/30", label: "상승" };
+    case "하락": return { icon: TrendingDown, color: "text-blue-400", bg: "bg-blue-400/10", border: "border-blue-400/30", label: "하락" };
+    case "변동성확대": return { icon: Activity, color: "text-yellow-400", bg: "bg-yellow-400/10", border: "border-yellow-400/30", label: "변동성" };
+    default: return { icon: Minus, color: "text-slate-400", bg: "bg-slate-400/10", border: "border-slate-400/30", label: "보합" };
+  }
+}
+
+export { getDirectionInfoLegacy as getDirectionInfo };

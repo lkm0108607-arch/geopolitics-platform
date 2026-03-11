@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { etfRecommendations, type ETFRecommendation } from "@/data/investmentStrategy";
 import { koreanETFs, getETFByTicker, searchETFs, etfCategories, type KoreanETF } from "@/data/koreanETFs";
+import { useTranslation } from "@/components/LanguageProvider";
+import { formatCurrency, formatNumber } from "@/lib/localeUnits";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,16 +101,7 @@ function getSession(): string | null {
 function setSession(n: string) { sessionStorage.setItem(SESSION_KEY, n); }
 function clearSession() { sessionStorage.removeItem(SESSION_KEY); }
 
-function formatKRW(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return "0원";
-  if (Math.abs(n) >= 100000000) return (n / 100000000).toFixed(1) + "억원";
-  if (Math.abs(n) >= 10000) return (n / 10000).toFixed(0) + "만원";
-  return n.toLocaleString("ko-KR") + "원";
-}
-function formatNum(n: number | null | undefined): string {
-  if (n == null || isNaN(n)) return "0";
-  return n.toLocaleString("ko-KR");
-}
+// formatKRW and formatNum are now provided by @/lib/localeUnits as formatCurrency and formatNumber
 
 // ─── Candlestick Chart Component ─────────────────────────────────────────────
 
@@ -122,6 +115,7 @@ interface CandleData {
 }
 
 function ETFChart({ ticker, range, interval }: { ticker: string; range: string; interval: string }) {
+  const { t } = useTranslation();
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const [loading, setLoading] = useState(true);
@@ -246,13 +240,13 @@ function ETFChart({ ticker, range, interval }: { ticker: string; range: string; 
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
           <div className="text-center">
             <RefreshCw className="w-6 h-6 text-blue-400 animate-spin mx-auto mb-2" />
-            <p className="text-xs text-slate-500">차트 로딩 중...</p>
+            <p className="text-xs text-slate-500">{t.simulation.chartLoading}</p>
           </div>
         </div>
       )}
       {error && !loading && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-          <p className="text-xs text-slate-500">차트 데이터를 불러올 수 없습니다</p>
+          <p className="text-xs text-slate-500">{t.simulation.chartError}</p>
         </div>
       )}
     </div>
@@ -262,6 +256,7 @@ function ETFChart({ ticker, range, interval }: { ticker: string; range: string; 
 // ─── Main Component ──────────────────────────────────────────────────────────
 
 export default function SimulationPage() {
+  const { locale, t } = useTranslation();
   const [hydrated, setHydrated] = useState(false);
   const [users, setUsers] = useState<Record<string, SimUser>>({});
   const [currentUser, setCurrentUser] = useState<string | null>(null);
@@ -455,7 +450,7 @@ export default function SimulationPage() {
       const amount = parseInt(tradeAmount);
       if (!amount || amount <= 0) { setTradeMsg({ type: "error", text: "금액을 올바르게 입력해주세요." }); return; }
       shares = Math.floor(amount / price);
-      if (shares <= 0) { setTradeMsg({ type: "error", text: `최소 1주 매수 가능 금액: ${formatNum(price)}원` }); return; }
+      if (shares <= 0) { setTradeMsg({ type: "error", text: `최소 1주 매수 가능 금액: ${formatCurrency(price, locale as any)}` }); return; }
     } else {
       shares = parseInt(tradeShares);
       if (!shares || shares <= 0) { setTradeMsg({ type: "error", text: "수량을 올바르게 입력해주세요." }); return; }
@@ -468,7 +463,7 @@ export default function SimulationPage() {
 
     if (tradeType === "매수") {
       if (totalCost > userData.balance) {
-        setTradeMsg({ type: "error", text: `잔액 부족. 필요: ${formatNum(totalCost)}원 (${shares}주)` }); return;
+        setTradeMsg({ type: "error", text: `잔액 부족. 필요: ${formatCurrency(totalCost, locale as any)} (${shares}주)` }); return;
       }
       userData.balance -= totalCost;
       const existing = userData.holdings.find((h) => h.ticker === selectedETF);
@@ -480,7 +475,7 @@ export default function SimulationPage() {
         userData.holdings.push({ ticker: selectedETF, shares, avgPrice: price });
       }
       userData.trades.unshift({ ticker: selectedETF, type: "매수", shares, price, total: totalCost, date: new Date().toLocaleString("ko-KR") });
-      setTradeMsg({ type: "success", text: `${getETFName(selectedETF)} ${shares}주 매수 완료! (${formatNum(totalCost)}원)` });
+      setTradeMsg({ type: "success", text: `${getETFName(selectedETF)} ${shares}주 매수 완료! (${formatCurrency(totalCost, locale as any)})` });
     } else {
       const existing = userData.holdings.find((h) => h.ticker === selectedETF);
       if (!existing || existing.shares < shares) {
@@ -490,7 +485,7 @@ export default function SimulationPage() {
       existing.shares -= shares;
       if (existing.shares === 0) userData.holdings = userData.holdings.filter((h) => h.ticker !== selectedETF);
       userData.trades.unshift({ ticker: selectedETF, type: "매도", shares, price, total: totalCost, date: new Date().toLocaleString("ko-KR") });
-      setTradeMsg({ type: "success", text: `${getETFName(selectedETF)} ${shares}주 매도 완료! (${formatNum(totalCost)}원)` });
+      setTradeMsg({ type: "success", text: `${getETFName(selectedETF)} ${shares}주 매도 완료! (${formatCurrency(totalCost, locale as any)})` });
     }
     saveUsers(u); setUsers({ ...u }); setTradeShares(""); setTradeAmount("");
   }
@@ -564,7 +559,7 @@ export default function SimulationPage() {
       <div className="flex items-center justify-center min-h-screen">
         <div className="text-center">
           <Wallet className="w-12 h-12 text-emerald-400 mx-auto mb-3 animate-pulse" />
-          <p className="text-slate-400 text-sm">로딩 중...</p>
+          <p className="text-slate-400 text-sm">{t.simulation.loading}</p>
         </div>
       </div>
     );
@@ -576,7 +571,7 @@ export default function SimulationPage() {
     return (
       <div className="max-w-md mx-auto px-4 py-20">
         <Link href="/investment" className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm mb-8 transition-colors">
-          <ArrowLeft className="w-4 h-4" /> 투자전략으로 돌아가기
+          <ArrowLeft className="w-4 h-4" /> {t.simulation.backToStrategy}
         </Link>
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
           <div className="flex items-center gap-3 mb-6">
@@ -584,37 +579,37 @@ export default function SimulationPage() {
               <Wallet className="w-6 h-6 text-emerald-400" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-white">ETF 모의투자</h1>
-              <p className="text-xs text-slate-400">실시간 차트 · 추천 ETF 매매</p>
+              <h1 className="text-xl font-bold text-white">{t.simulation.title}</h1>
+              <p className="text-xs text-slate-400">{t.simulation.subtitle}</p>
             </div>
           </div>
           <div className="flex mb-6 bg-slate-800 rounded-lg p-1">
-            <button onClick={() => { setMode("login"); setError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "login" ? "bg-blue-600 text-white" : "text-slate-400"}`}>로그인</button>
-            <button onClick={() => { setMode("register"); setError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "register" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>회원가입</button>
+            <button onClick={() => { setMode("login"); setError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "login" ? "bg-blue-600 text-white" : "text-slate-400"}`}>{t.simulation.login}</button>
+            <button onClick={() => { setMode("register"); setError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "register" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>{t.simulation.register}</button>
           </div>
           <div className="space-y-4">
             <div>
-              <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />아이디</label>
+              <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />{t.simulation.userId}</label>
               <input type="text" value={userId} onChange={(e) => setUserId(e.target.value)} placeholder="영문, 숫자, 밑줄 (3자 이상)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && (mode === "login" ? handleLogin() : handleRegister())} />
             </div>
             <div>
-              <label className="block text-xs text-slate-400 mb-1.5"><Lock className="w-3 h-3 inline mr-1" />비밀번호</label>
+              <label className="block text-xs text-slate-400 mb-1.5"><Lock className="w-3 h-3 inline mr-1" />{t.simulation.password}</label>
               <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="비밀번호 (4자 이상)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && (mode === "login" ? handleLogin() : handleRegister())} />
             </div>
             {mode === "register" && (
               <div>
-                <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />닉네임 (표시 이름)</label>
+                <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />{t.simulation.nickname}</label>
                 <input type="text" value={nickname} onChange={(e) => setNickname(e.target.value)} placeholder="닉네임 (2자 이상)" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500" onKeyDown={(e) => e.key === "Enter" && handleRegister()} />
               </div>
             )}
             {error && <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">{error}</p>}
             <button onClick={mode === "login" ? handleLogin : handleRegister} className={`w-full py-3 rounded-lg text-sm font-bold transition-colors ${mode === "login" ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
-              {mode === "login" ? "로그인" : "회원가입 (1,000만원 지급)"}
+              {mode === "login" ? t.simulation.login : t.simulation.registerBonus}
             </button>
           </div>
           {mode === "register" && (
             <div className="mt-4 bg-emerald-900/15 border border-emerald-800/25 rounded-lg p-3">
-              <p className="text-xs text-emerald-300 leading-relaxed">회원가입 시 <strong>1,000만원</strong> 모의투자 자금이 지급됩니다. 국내 상장 ETF {koreanETFs.length}종 전체를 매매할 수 있습니다.</p>
+              <p className="text-xs text-emerald-300 leading-relaxed">회원가입 시 <strong>{formatCurrency(10000000, locale as any)}</strong> 모의투자 자금이 지급됩니다. 국내 상장 ETF {koreanETFs.length}종 전체를 매매할 수 있습니다.</p>
             </div>
           )}
         </div>
@@ -638,7 +633,7 @@ export default function SimulationPage() {
                 <div className="w-8 h-8 rounded-lg bg-blue-600/20 flex items-center justify-center">
                   <User className="w-4 h-4 text-blue-400" />
                 </div>
-                <h2 className="text-base font-bold text-white">회원 정보 수정</h2>
+                <h2 className="text-base font-bold text-white">{t.simulation.profileEdit}</h2>
               </div>
               <button onClick={() => setShowProfileEdit(false)} className="text-slate-500 hover:text-white transition-colors">
                 <X className="w-5 h-5" />
@@ -649,7 +644,7 @@ export default function SimulationPage() {
               {/* User ID (read-only) */}
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">
-                  <User className="w-3 h-3 inline mr-1" />아이디 (수정 불가)
+                  <User className="w-3 h-3 inline mr-1" />{t.simulation.userIdReadonly}
                 </label>
                 <div className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-500 cursor-not-allowed">
                   {currentUser}
@@ -659,7 +654,7 @@ export default function SimulationPage() {
               {/* Nickname field */}
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">
-                  <User className="w-3 h-3 inline mr-1" />닉네임 (수정 가능)
+                  <User className="w-3 h-3 inline mr-1" />{t.simulation.nicknameEditable}
                 </label>
                 <input
                   type="text"
@@ -674,7 +669,7 @@ export default function SimulationPage() {
               {/* Password field (read-only) */}
               <div>
                 <label className="block text-xs text-slate-400 mb-1.5">
-                  <Lock className="w-3 h-3 inline mr-1" />비밀번호 (수정 불가)
+                  <Lock className="w-3 h-3 inline mr-1" />{t.simulation.passwordReadonly}
                 </label>
                 <div className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-500 flex items-center gap-2 cursor-not-allowed">
                   <Lock className="w-3 h-3 text-slate-600" />
@@ -693,7 +688,7 @@ export default function SimulationPage() {
                 onClick={handleUpdateNickname}
                 className="w-full py-2.5 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
               >
-                닉네임 변경
+                {t.simulation.changeNickname}
               </button>
             </div>
           </div>
@@ -708,20 +703,20 @@ export default function SimulationPage() {
           </Link>
           <h1 className="text-lg font-bold text-white flex items-center gap-2">
             <Wallet className="w-5 h-5 text-emerald-400" />
-            모의투자
+            {t.simulation.title}
           </h1>
         </div>
         <div className="flex items-center gap-3">
           {/* Portfolio Summary Badges */}
           <div className="hidden md:flex items-center gap-2">
             <span className="text-xs bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700">
-              총자산 <strong className="text-white">{formatKRW(totalAssets)}</strong>
+              {t.simulation.totalAssets} <strong className="text-white">{formatCurrency(totalAssets, locale as any)}</strong>
             </span>
             <span className="text-xs bg-slate-800 text-slate-300 px-3 py-1.5 rounded-lg border border-slate-700">
-              현금 <strong className="text-blue-400">{formatKRW(user?.balance || 0)}</strong>
+              {t.simulation.cash} <strong className="text-blue-400">{formatCurrency(user?.balance || 0, locale as any)}</strong>
             </span>
             <span className={`text-xs px-3 py-1.5 rounded-lg border ${totalPnL >= 0 ? "bg-red-900/20 text-red-300 border-red-800/30" : "bg-blue-900/20 text-blue-300 border-blue-800/30"}`}>
-              수익 <strong>{totalPnL >= 0 ? "+" : ""}{formatKRW(totalPnL)} ({totalPnL >= 0 ? "+" : ""}{totalPnLPct}%)</strong>
+              {t.simulation.profit} <strong>{totalPnL >= 0 ? "+" : ""}{formatCurrency(totalPnL, locale as any)} ({totalPnL >= 0 ? "+" : ""}{totalPnLPct}%)</strong>
             </span>
           </div>
           <button
@@ -740,15 +735,15 @@ export default function SimulationPage() {
       {/* Mobile Summary */}
       <div className="md:hidden grid grid-cols-3 gap-2 mb-4">
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-center">
-          <p className="text-[10px] text-slate-500">총자산</p>
-          <p className="text-sm font-bold text-white">{formatKRW(totalAssets)}</p>
+          <p className="text-[10px] text-slate-500">{t.simulation.totalAssets}</p>
+          <p className="text-sm font-bold text-white">{formatCurrency(totalAssets, locale as any)}</p>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-center">
-          <p className="text-[10px] text-slate-500">현금</p>
-          <p className="text-sm font-bold text-blue-400">{formatKRW(user?.balance || 0)}</p>
+          <p className="text-[10px] text-slate-500">{t.simulation.cash}</p>
+          <p className="text-sm font-bold text-blue-400">{formatCurrency(user?.balance || 0, locale as any)}</p>
         </div>
         <div className="bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-center">
-          <p className="text-[10px] text-slate-500">수익률</p>
+          <p className="text-[10px] text-slate-500">{t.simulation.profitRate}</p>
           <p className={`text-sm font-bold ${totalPnL >= 0 ? "text-red-400" : "text-blue-400"}`}>
             {totalPnL >= 0 ? "+" : ""}{totalPnLPct}%
           </p>
@@ -758,10 +753,10 @@ export default function SimulationPage() {
       {/* Main Tabs */}
       <div className="flex gap-1 mb-4 bg-slate-900 border border-slate-800 rounded-lg p-1 w-fit">
         {([
-          { key: "chart" as const, label: "차트/매매", icon: BarChart3 },
-          { key: "holdings" as const, label: "보유종목", icon: PieChart },
-          { key: "history" as const, label: "거래내역", icon: History },
-          { key: "ranking" as const, label: "랭킹", icon: Trophy },
+          { key: "chart" as const, label: t.simulation.chartTrade, icon: BarChart3 },
+          { key: "holdings" as const, label: t.simulation.holdings, icon: PieChart },
+          { key: "history" as const, label: t.simulation.tradeHistory, icon: History },
+          { key: "ranking" as const, label: t.simulation.ranking, icon: Trophy },
         ]).map(({ key, label, icon: Icon }) => (
           <button key={key} onClick={() => setActiveTab(key)} className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === key ? "bg-blue-600 text-white" : "text-slate-400 hover:text-white"}`}>
             <Icon className="w-4 h-4" />{label}
@@ -792,7 +787,7 @@ export default function SimulationPage() {
                     type="text"
                     value={etfSearch}
                     onChange={(e) => setEtfSearch(e.target.value)}
-                    placeholder="ETF 검색 (이름, 종목코드)"
+                    placeholder={t.simulation.etfSearch}
                     className="w-full bg-slate-800 border border-slate-700 rounded-md pl-8 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
                   />
                 </div>
@@ -812,7 +807,7 @@ export default function SimulationPage() {
                     onClick={() => setShowRecommendedOnly(!showRecommendedOnly)}
                     className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-md transition-colors ${showRecommendedOnly ? "bg-amber-600/30 text-amber-300 border border-amber-600/40" : "bg-slate-800 text-slate-500 hover:text-white"}`}
                   >
-                    <Star className="w-3 h-3" /> AI추천만
+                    <Star className="w-3 h-3" /> {t.simulation.aiRecommendedOnly}
                   </button>
                   <span className="text-[10px] text-slate-500">{filteredETFs.length}종목</span>
                 </div>
@@ -846,13 +841,13 @@ export default function SimulationPage() {
                         <div className="text-right flex-shrink-0 ml-2">
                           {p ? (
                             <>
-                              <p className="text-sm font-medium text-white">{formatNum(p.currentPrice)}</p>
+                              <p className="text-sm font-medium text-white">{formatCurrency(p.currentPrice, locale as any)}</p>
                               <p className={`text-[10px] ${(p.change ?? 0) >= 0 ? "text-red-400" : "text-blue-400"}`}>
                                 {(p.change ?? 0) >= 0 ? "+" : ""}{p.changePercent?.toFixed(2) ?? "0.00"}%
                               </p>
                             </>
                           ) : recInfo ? (
-                            <p className="text-sm text-slate-500">{formatNum(recInfo.currentPrice)}</p>
+                            <p className="text-sm text-slate-500">{formatCurrency(recInfo.currentPrice, locale as any)}</p>
                           ) : (
                             <p className="text-[10px] text-slate-600">-</p>
                           )}
@@ -863,7 +858,7 @@ export default function SimulationPage() {
                 })}
                 {filteredETFs.length === 0 && (
                   <div className="text-center py-8">
-                    <p className="text-xs text-slate-500">검색 결과가 없습니다</p>
+                    <p className="text-xs text-slate-500">{t.simulation.noSearchResults}</p>
                   </div>
                 )}
               </div>
@@ -888,7 +883,7 @@ export default function SimulationPage() {
               </div>
               <div className="flex items-end gap-3">
                 <span className="text-3xl font-bold text-white">
-                  {formatNum(selectedPrice?.currentPrice || currentPrice)}원
+                  {formatCurrency(selectedPrice?.currentPrice || currentPrice, locale as any)}
                 </span>
                 {selectedPrice && (
                   <div className={`flex items-center gap-1 pb-1 ${(selectedPrice.change ?? 0) >= 0 ? "text-red-400" : "text-blue-400"}`}>
@@ -897,17 +892,17 @@ export default function SimulationPage() {
                       {(selectedPrice.change ?? 0) >= 0 ? "+" : ""}{selectedPrice.changePercent?.toFixed(2) ?? "0.00"}%
                     </span>
                     <span className="text-sm">
-                      ({(selectedPrice.change ?? 0) >= 0 ? "+" : ""}{formatNum(selectedPrice.change)})
+                      ({(selectedPrice.change ?? 0) >= 0 ? "+" : ""}{formatNumber(selectedPrice.change, locale as any)})
                     </span>
                   </div>
                 )}
               </div>
               {selectedPrice && (
                 <div className="flex gap-4 mt-2 text-xs text-slate-500">
-                  {selectedPrice.volume != null && selectedPrice.volume > 0 && <span>거래량 {formatNum(selectedPrice.volume)}</span>}
-                  {selectedPrice.dayHigh != null && selectedPrice.dayHigh > 0 && <span>고가 {formatNum(selectedPrice.dayHigh)}원</span>}
-                  {selectedPrice.dayLow != null && selectedPrice.dayLow > 0 && <span>저가 {formatNum(selectedPrice.dayLow)}원</span>}
-                  {selectedPrice.marketCap != null && selectedPrice.marketCap > 0 && <span>시총 {formatKRW(selectedPrice.marketCap)}</span>}
+                  {selectedPrice.volume != null && selectedPrice.volume > 0 && <span>{t.simulation.volume} {formatNumber(selectedPrice.volume, locale as any)}</span>}
+                  {selectedPrice.dayHigh != null && selectedPrice.dayHigh > 0 && <span>{t.simulation.high} {formatCurrency(selectedPrice.dayHigh, locale as any)}</span>}
+                  {selectedPrice.dayLow != null && selectedPrice.dayLow > 0 && <span>{t.simulation.low} {formatCurrency(selectedPrice.dayLow, locale as any)}</span>}
+                  {selectedPrice.marketCap != null && selectedPrice.marketCap > 0 && <span>{t.simulation.marketCap} {formatCurrency(selectedPrice.marketCap, locale as any)}</span>}
                 </div>
               )}
             </div>
@@ -954,7 +949,7 @@ export default function SimulationPage() {
                     <div key={tf.label} className="bg-slate-800/50 rounded-lg p-2.5 text-center">
                       <p className="text-[10px] text-slate-500">{tf.label} ({tf.period})</p>
                       <p className="text-xs font-bold text-emerald-400">{tf.expectedReturn}</p>
-                      <p className="text-[10px] text-red-400/70">위험 {tf.maxRisk}</p>
+                      <p className="text-[10px] text-red-400/70">{t.simulation.risk} {tf.maxRisk}</p>
                     </div>
                   ))}
                 </div>
@@ -968,24 +963,24 @@ export default function SimulationPage() {
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
               <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                 <ShoppingCart className="w-4 h-4 text-emerald-400" />
-                주문
+                {t.simulation.order}
               </h3>
 
               {/* Buy/Sell Toggle */}
               <div className="flex mb-3 bg-slate-800 rounded-lg p-0.5">
-                <button onClick={() => setTradeType("매수")} className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${tradeType === "매수" ? "bg-red-600 text-white" : "text-slate-400"}`}>매수</button>
-                <button onClick={() => setTradeType("매도")} className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${tradeType === "매도" ? "bg-blue-600 text-white" : "text-slate-400"}`}>매도</button>
+                <button onClick={() => setTradeType("매수")} className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${tradeType === "매수" ? "bg-red-600 text-white" : "text-slate-400"}`}>{t.simulation.buy}</button>
+                <button onClick={() => setTradeType("매도")} className={`flex-1 py-2 text-sm font-bold rounded-md transition-colors ${tradeType === "매도" ? "bg-blue-600 text-white" : "text-slate-400"}`}>{t.simulation.sell}</button>
               </div>
 
               {/* Current Price */}
               <div className="bg-slate-800/60 rounded-lg p-3 mb-3">
                 <div className="flex justify-between text-xs text-slate-400 mb-1">
-                  <span>현재가</span>
-                  <span className="text-white font-bold">{formatNum(currentPrice)}원</span>
+                  <span>{t.simulation.currentPrice}</span>
+                  <span className="text-white font-bold">{formatCurrency(currentPrice, locale as any)}</span>
                 </div>
                 {holding && (
                   <div className="flex justify-between text-xs text-slate-400">
-                    <span>보유 수량</span>
+                    <span>{t.simulation.holdingQty}</span>
                     <span className="text-emerald-400 font-medium">{holding.shares}주</span>
                   </div>
                 )}
@@ -993,14 +988,14 @@ export default function SimulationPage() {
 
               {/* Trade Mode Toggle */}
               <div className="flex mb-2 bg-slate-800/60 rounded-md p-0.5">
-                <button onClick={() => { setTradeMode("shares"); setTradeAmount(""); }} className={`flex-1 py-1.5 text-[11px] font-medium rounded transition-colors ${tradeMode === "shares" ? "bg-slate-700 text-white" : "text-slate-500"}`}>수량(주)</button>
-                <button onClick={() => { setTradeMode("amount"); setTradeShares(""); }} className={`flex-1 py-1.5 text-[11px] font-medium rounded transition-colors ${tradeMode === "amount" ? "bg-slate-700 text-white" : "text-slate-500"}`}>금액(원)</button>
+                <button onClick={() => { setTradeMode("shares"); setTradeAmount(""); }} className={`flex-1 py-1.5 text-[11px] font-medium rounded transition-colors ${tradeMode === "shares" ? "bg-slate-700 text-white" : "text-slate-500"}`}>{t.simulation.sharesUnit}</button>
+                <button onClick={() => { setTradeMode("amount"); setTradeShares(""); }} className={`flex-1 py-1.5 text-[11px] font-medium rounded transition-colors ${tradeMode === "amount" ? "bg-slate-700 text-white" : "text-slate-500"}`}>{t.simulation.amountUnit}</button>
               </div>
 
               {/* Input */}
               {tradeMode === "shares" ? (
                 <div className="mb-3">
-                  <label className="block text-xs text-slate-400 mb-1">수량 (주)</label>
+                  <label className="block text-xs text-slate-400 mb-1">{t.simulation.sharesUnit}</label>
                   <input
                     type="number" min="1" value={tradeShares}
                     onChange={(e) => setTradeShares(e.target.value)}
@@ -1010,7 +1005,7 @@ export default function SimulationPage() {
                 </div>
               ) : (
                 <div className="mb-3">
-                  <label className="block text-xs text-slate-400 mb-1">금액 (원)</label>
+                  <label className="block text-xs text-slate-400 mb-1">{t.simulation.amountUnit}</label>
                   <input
                     type="number" min="1" value={tradeAmount}
                     onChange={(e) => setTradeAmount(e.target.value)}
@@ -1019,7 +1014,7 @@ export default function SimulationPage() {
                   />
                   {tradeAmount && parseInt(tradeAmount) > 0 && currentPrice > 0 && (
                     <p className="text-[10px] text-slate-500 mt-1">
-                      ≈ {Math.floor(parseInt(tradeAmount) / currentPrice)}주 ({formatNum(Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice)}원 체결)
+                      ≈ {Math.floor(parseInt(tradeAmount) / currentPrice)}주 ({formatCurrency(Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice, locale as any)} 체결)
                     </p>
                   )}
                 </div>
@@ -1032,7 +1027,7 @@ export default function SimulationPage() {
                     { label: "10%", pct: 0.1 },
                     { label: "25%", pct: 0.25 },
                     { label: "50%", pct: 0.5 },
-                    { label: "전액", pct: 1 },
+                    { label: t.simulation.fullAmount, pct: 1 },
                   ].map(({ label, pct }) => (
                     <button key={label} onClick={() => {
                       const amt = Math.floor((user?.balance || 0) * pct);
@@ -1053,7 +1048,7 @@ export default function SimulationPage() {
                     { label: "25%", pct: 0.25 },
                     { label: "50%", pct: 0.5 },
                     { label: "75%", pct: 0.75 },
-                    { label: "전량", pct: 1 },
+                    { label: t.simulation.fullQty, pct: 1 },
                   ].map(({ label, pct }) => (
                     <button key={label} onClick={() => {
                       const shares = Math.floor(holding.shares * pct);
@@ -1076,30 +1071,30 @@ export default function SimulationPage() {
                   {tradeMode === "shares" ? (
                     <>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-400">예상 {tradeType} 금액</span>
-                        <span className="text-white font-bold">{formatNum(currentPrice * parseInt(tradeShares))}원</span>
+                        <span className="text-slate-400">{t.simulation.estimatedAmount}</span>
+                        <span className="text-white font-bold">{formatCurrency(currentPrice * parseInt(tradeShares), locale as any)}</span>
                       </div>
                       {tradeType === "매수" && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-slate-500">잔액 후</span>
-                          <span className="text-slate-400">{formatNum((user?.balance || 0) - currentPrice * parseInt(tradeShares))}원</span>
+                          <span className="text-slate-500">{t.simulation.balanceAfter}</span>
+                          <span className="text-slate-400">{formatCurrency((user?.balance || 0) - currentPrice * parseInt(tradeShares), locale as any)}</span>
                         </div>
                       )}
                     </>
                   ) : (
                     <>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-400">체결 수량</span>
+                        <span className="text-slate-400">{t.simulation.executedQty}</span>
                         <span className="text-white font-bold">{Math.floor(parseInt(tradeAmount) / currentPrice)}주</span>
                       </div>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-slate-400">실제 {tradeType} 금액</span>
-                        <span className="text-white font-bold">{formatNum(Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice)}원</span>
+                        <span className="text-slate-400">{t.simulation.actualAmount}</span>
+                        <span className="text-white font-bold">{formatCurrency(Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice, locale as any)}</span>
                       </div>
                       {tradeType === "매수" && (
                         <div className="flex justify-between text-xs">
-                          <span className="text-slate-500">잔액 후</span>
-                          <span className="text-slate-400">{formatNum((user?.balance || 0) - Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice)}원</span>
+                          <span className="text-slate-500">{t.simulation.balanceAfter}</span>
+                          <span className="text-slate-400">{formatCurrency((user?.balance || 0) - Math.floor(parseInt(tradeAmount) / currentPrice) * currentPrice, locale as any)}</span>
                         </div>
                       )}
                     </>
@@ -1119,18 +1114,18 @@ export default function SimulationPage() {
                 disabled={tradeMode === "shares" ? (!tradeShares || parseInt(tradeShares) <= 0) : (!tradeAmount || parseInt(tradeAmount) <= 0)}
                 className={`w-full py-3 rounded-lg text-sm font-bold transition-colors disabled:opacity-30 ${tradeType === "매수" ? "bg-red-600 hover:bg-red-500 text-white" : "bg-blue-600 hover:bg-blue-500 text-white"}`}
               >
-                {tradeType} 주문
+                {tradeType === "매수" ? t.simulation.buy : t.simulation.sell} {t.simulation.orderButton}
               </button>
 
               <p className="text-[10px] text-slate-600 mt-2 text-center">
-                잔액 {formatNum(user?.balance || 0)}원
+                {t.simulation.balance} {formatCurrency(user?.balance || 0, locale as any)}
               </p>
             </div>
 
             {/* Quick Holdings */}
             {user && user.holdings.length > 0 && (
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                <h3 className="text-sm font-bold text-white mb-3">보유 요약</h3>
+                <h3 className="text-sm font-bold text-white mb-3">{t.simulation.holdingSummary}</h3>
                 <div className="space-y-2">
                   {user.holdings.map((h) => {
                     const p = getTradePrice(h.ticker);
@@ -1144,12 +1139,12 @@ export default function SimulationPage() {
                         <div className="flex justify-between items-center">
                           <div>
                             <p className="text-xs font-medium text-white">{getETFName(h.ticker)}</p>
-                            <p className="text-[10px] text-slate-500">{h.shares}주 · 평단 {formatNum(h.avgPrice)}원</p>
+                            <p className="text-[10px] text-slate-500">{h.shares}주 · 평단 {formatCurrency(h.avgPrice, locale as any)}</p>
                           </div>
                           <div className="text-right">
-                            <p className="text-xs text-white">{formatNum(h.shares * p)}원</p>
+                            <p className="text-xs text-white">{formatCurrency(h.shares * p, locale as any)}</p>
                             <p className={`text-[10px] font-medium ${pnl >= 0 ? "text-red-400" : "text-blue-400"}`}>
-                              {pnl >= 0 ? "+" : ""}{formatNum(pnl)}원
+                              {pnl >= 0 ? "+" : ""}{formatCurrency(pnl, locale as any)}
                             </p>
                           </div>
                         </div>
@@ -1167,13 +1162,13 @@ export default function SimulationPage() {
       {activeTab === "holdings" && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
           <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <PieChart className="w-5 h-5 text-purple-400" /> 보유종목 현황
+            <PieChart className="w-5 h-5 text-purple-400" /> {t.simulation.holdingsStatus}
           </h2>
           {user?.holdings.length === 0 ? (
             <div className="text-center py-12">
               <Wallet className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-500">보유 중인 종목이 없습니다.</p>
-              <p className="text-xs text-slate-600 mt-1">차트/매매 탭에서 ETF를 매수해보세요.</p>
+              <p className="text-slate-500">{t.simulation.noHoldings}</p>
+              <p className="text-xs text-slate-600 mt-1">{t.simulation.noHoldingsHint}</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -1201,28 +1196,28 @@ export default function SimulationPage() {
                         <p className="text-xs text-slate-500">{kEtf?.name || h.ticker} · {h.ticker}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-lg font-bold text-white">{formatNum(currentValue)}원</p>
+                        <p className="text-lg font-bold text-white">{formatCurrency(currentValue, locale as any)}</p>
                         <p className={`text-xs font-medium ${pnl >= 0 ? "text-red-400" : "text-blue-400"}`}>
-                          {pnl >= 0 ? "+" : ""}{formatNum(pnl)}원 ({pnl >= 0 ? "+" : ""}{pnlPct}%)
+                          {pnl >= 0 ? "+" : ""}{formatCurrency(pnl, locale as any)} ({pnl >= 0 ? "+" : ""}{pnlPct}%)
                         </p>
                       </div>
                     </div>
                     <div className="grid grid-cols-4 gap-3 text-xs">
-                      <div><p className="text-slate-500">보유</p><p className="text-white font-medium">{h.shares}주</p></div>
-                      <div><p className="text-slate-500">평균 매수가</p><p className="text-white font-medium">{formatNum(h.avgPrice)}원</p></div>
-                      <div><p className="text-slate-500">현재가</p><p className="text-white font-medium">{formatNum(price)}원</p></div>
-                      <div><p className="text-slate-500">투자 원금</p><p className="text-white font-medium">{formatNum(investedValue)}원</p></div>
+                      <div><p className="text-slate-500">{t.simulation.holdings}</p><p className="text-white font-medium">{h.shares}주</p></div>
+                      <div><p className="text-slate-500">{t.simulation.avgBuyPrice}</p><p className="text-white font-medium">{formatCurrency(h.avgPrice, locale as any)}</p></div>
+                      <div><p className="text-slate-500">{t.simulation.currentPrice}</p><p className="text-white font-medium">{formatCurrency(price, locale as any)}</p></div>
+                      <div><p className="text-slate-500">{t.simulation.investedAmount}</p><p className="text-white font-medium">{formatCurrency(investedValue, locale as any)}</p></div>
                     </div>
                     {sp && (
                       <div className="mt-2 flex gap-3 text-[10px] text-slate-500">
-                        <span>등락 {(sp.change ?? 0) >= 0 ? "+" : ""}{sp.changePercent?.toFixed(2) ?? "0.00"}%</span>
-                        {sp.volume > 0 && <span>거래량 {formatNum(sp.volume)}</span>}
+                        <span>{t.simulation.change} {(sp.change ?? 0) >= 0 ? "+" : ""}{sp.changePercent?.toFixed(2) ?? "0.00"}%</span>
+                        {sp.volume > 0 && <span>{t.simulation.volume} {formatNumber(sp.volume, locale as any)}</span>}
                       </div>
                     )}
                     {totalHoldingsValue > 0 && (
                       <div className="mt-2">
                         <div className="flex items-center justify-between mb-0.5">
-                          <span className="text-[10px] text-slate-500">비중</span>
+                          <span className="text-[10px] text-slate-500">{t.simulation.proportion}</span>
                           <span className="text-[10px] text-slate-400 font-medium">{((currentValue / totalAssets) * 100)?.toFixed(1) ?? "0.0"}%</span>
                         </div>
                         <div className="w-full bg-slate-700 rounded-full h-1.5">
@@ -1230,14 +1225,14 @@ export default function SimulationPage() {
                         </div>
                       </div>
                     )}
-                    <p className="text-[10px] text-blue-400 mt-2 text-right">차트/매매 보기 →</p>
+                    <p className="text-[10px] text-blue-400 mt-2 text-right">{t.simulation.viewChartTrade}</p>
                   </button>
                 );
               })}
 
               {/* Composition Bar */}
               <div className="bg-slate-800/30 rounded-xl p-4">
-                <h3 className="text-sm font-bold text-white mb-3">포트폴리오 구성</h3>
+                <h3 className="text-sm font-bold text-white mb-3">{t.simulation.portfolioComposition}</h3>
                 <div className="flex items-center gap-1 mb-2 h-5 rounded-full overflow-hidden bg-slate-700">
                   <div className="bg-slate-500 h-full" style={{ width: `${(user?.balance || 0) / totalAssets * 100}%` }} />
                   {user?.holdings.map((h) => {
@@ -1265,12 +1260,12 @@ export default function SimulationPage() {
       {activeTab === "history" && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
           <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-            <History className="w-5 h-5 text-yellow-400" /> 거래내역
+            <History className="w-5 h-5 text-yellow-400" /> {t.simulation.tradeHistory}
           </h2>
           {user?.trades.length === 0 ? (
             <div className="text-center py-12">
               <History className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-              <p className="text-slate-500">거래 내역이 없습니다.</p>
+              <p className="text-slate-500">{t.simulation.noTradeHistory}</p>
             </div>
           ) : (
             <div className="space-y-2">
@@ -1285,9 +1280,9 @@ export default function SimulationPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-sm text-white">{trade.shares}주 x {formatNum(trade.price)}원</p>
+                      <p className="text-sm text-white">{trade.shares}주 x {formatCurrency(trade.price, locale as any)}</p>
                       <p className={`text-xs font-medium ${trade.type === "매수" ? "text-red-400" : "text-blue-400"}`}>
-                        {trade.type === "매수" ? "-" : "+"}{formatNum(trade.total)}원
+                        {trade.type === "매수" ? "-" : "+"}{formatCurrency(trade.total, locale as any)}
                       </p>
                     </div>
                   </div>
@@ -1307,16 +1302,16 @@ export default function SimulationPage() {
               <div className="flex items-center gap-3">
                 <Trophy className="w-6 h-6 text-amber-400" />
                 <div>
-                  <h2 className="text-lg font-bold text-white">투자 랭킹</h2>
-                  <p className="text-xs text-slate-400">모든 참가자의 수익률이 자동으로 공개됩니다</p>
+                  <h2 className="text-lg font-bold text-white">{t.simulation.investmentRanking}</h2>
+                  <p className="text-xs text-slate-400">{t.simulation.rankingDesc}</p>
                 </div>
               </div>
               <div className="text-right">
-                <p className="text-xs text-slate-500">내 수익률</p>
+                <p className="text-xs text-slate-500">{t.simulation.myReturn}</p>
                 <p className={`text-xl font-bold ${totalPnL >= 0 ? "text-red-400" : "text-blue-400"}`}>
                   {totalPnL >= 0 ? "+" : ""}{totalPnLPct}%
                 </p>
-                <p className="text-[10px] text-slate-500">총자산 {formatKRW(totalAssets)}</p>
+                <p className="text-[10px] text-slate-500">{t.simulation.totalAssets} {formatCurrency(totalAssets, locale as any)}</p>
               </div>
             </div>
           </div>
@@ -1325,22 +1320,22 @@ export default function SimulationPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                <Trophy className="w-5 h-5 text-yellow-400" /> 투자 랭킹
+                <Trophy className="w-5 h-5 text-yellow-400" /> {t.simulation.investmentRanking}
               </h2>
               <button onClick={fetchLeaderboard} disabled={lbLoading} className="text-xs text-slate-400 hover:text-white flex items-center gap-1 transition-colors">
-                <RefreshCw className={`w-3.5 h-3.5 ${lbLoading ? "animate-spin" : ""}`} /> 새로고침
+                <RefreshCw className={`w-3.5 h-3.5 ${lbLoading ? "animate-spin" : ""}`} /> {t.simulation.refresh}
               </button>
             </div>
 
             {lbLoading && leaderboard.length === 0 ? (
               <div className="text-center py-12">
                 <RefreshCw className="w-8 h-8 text-slate-600 mx-auto mb-3 animate-spin" />
-                <p className="text-slate-500 text-sm">랭킹 불러오는 중...</p>
+                <p className="text-slate-500 text-sm">{t.simulation.rankingLoading}</p>
               </div>
             ) : leaderboard.length === 0 ? (
               <div className="text-center py-12">
                 <Trophy className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-                <p className="text-slate-500">아직 공개된 수익률이 없습니다.</p>
+                <p className="text-slate-500">{t.simulation.noRanking}</p>
                 <p className="text-xs text-slate-600 mt-1">위 &quot;랭킹 공개&quot; 버튼을 눌러 첫 번째 참가자가 되어보세요!</p>
               </div>
             ) : (
@@ -1364,7 +1359,7 @@ export default function SimulationPage() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-bold text-white truncate">
                             {entry.nickname}
-                            {isMe && <span className="ml-1.5 text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded">나</span>}
+                            {isMe && <span className="ml-1.5 text-[10px] bg-blue-600 text-white px-1.5 py-0.5 rounded">{t.simulation.me}</span>}
                           </p>
                         </div>
                         <div className="flex items-center gap-3 mt-0.5">
@@ -1385,7 +1380,7 @@ export default function SimulationPage() {
                           {entry.totalPnLPct >= 0 ? "+" : ""}{entry.totalPnLPct.toFixed(2)}%
                         </p>
                         <p className="text-[10px] text-slate-500">
-                          {formatKRW(entry.totalAssets)}
+                          {formatCurrency(entry.totalAssets, locale as any)}
                         </p>
                       </div>
                     </div>
@@ -1396,7 +1391,7 @@ export default function SimulationPage() {
 
             <div className="mt-4 pt-4 border-t border-slate-800">
               <p className="text-[10px] text-slate-600 text-center">
-                초기 자금 1,000만원 기준 · 수익률순 정렬 · 랭킹 공개 시 최신 데이터로 갱신됩니다
+                초기 자금 {formatCurrency(10000000, locale as any)} 기준 · 수익률순 정렬 · 랭킹 공개 시 최신 데이터로 갱신됩니다
               </p>
             </div>
           </div>

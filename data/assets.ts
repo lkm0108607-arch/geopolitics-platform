@@ -1,4 +1,5 @@
 import type { Asset, AssetCategory } from "@/types";
+import { koreanETFs } from "./koreanETFs";
 
 /**
  * 핵심 투자 자산/지표 데이터베이스
@@ -303,10 +304,50 @@ export const assets: Asset[] = [
   },
 ];
 
+// ─── ETF 카테고리 → 자산 카테고리 매핑 ──────────────────────────────────────
+
+const ETF_CATEGORY_MAP: Record<string, AssetCategory> = {
+  "국내주식": "산업",
+  "해외주식": "지수",
+  "채권": "금리",
+  "원자재": "원자재",
+  "인버스/레버리지": "지수",
+  "통화": "환율",
+  "리츠": "산업",
+  "테마": "산업",
+};
+
 // ─── 접근 함수 ──────────────────────────────────────────────────────────────
 
 export function getAssetById(id: string): Asset | undefined {
-  return assets.find((a) => a.id === id);
+  // 기존 핵심 자산에서 먼저 검색
+  const coreAsset = assets.find((a) => a.id === id);
+  if (coreAsset) return coreAsset;
+
+  // ETF ID 형식 (etf-069500) 에서 검색
+  if (id.startsWith("etf-")) {
+    const ticker = id.replace("etf-", "");
+    const etf = koreanETFs.find((e) => e.ticker === ticker);
+    if (etf) {
+      return {
+        id,
+        name: etf.nameKr,
+        nameEn: etf.name,
+        category: ETF_CATEGORY_MAP[etf.category] ?? "산업",
+        unit: "원",
+        currentValue: 0,
+        previousValue: 0,
+        changePercent: 0,
+        description: `${etf.provider} ${etf.nameKr} (${etf.subCategory})`,
+        relatedFactorIds: [],
+        relatedETFTickers: [etf.ticker],
+        isActive: true,
+        updatedAt: new Date().toISOString().slice(0, 10),
+      };
+    }
+  }
+
+  return undefined;
 }
 
 export function getAssetsByCategory(category: AssetCategory): Asset[] {

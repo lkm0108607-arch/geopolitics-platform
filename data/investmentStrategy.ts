@@ -652,7 +652,7 @@ export const investmentScenarios: InvestmentScenario[] = [
   {
     id: "soft-landing",
     name: "연착륙: 관세 부분 타협 + 경기 회복",
-    probability: 20,
+    probability: 25,
     description:
       "미중·미EU 양자 협상이 부분 타결되면서 관세가 일부 인하된다. 연준이 점진적 금리 인하를 시작하고, 경기가 회복된다.",
     marketImpact:
@@ -683,7 +683,7 @@ export const investmentScenarios: InvestmentScenario[] = [
   {
     id: "stagflation",
     name: "스태그플레이션: 고물가 + 저성장 동시",
-    probability: 15,
+    probability: 10,
     description:
       "관세가 인플레이션을 재점화(CPI 4% 이상)하는 동시에 경기는 둔화되는 최악의 조합이 현실화된다. 주식·채권이 동시에 하락한다.",
     marketImpact:

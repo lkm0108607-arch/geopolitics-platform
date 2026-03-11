@@ -1,283 +1,378 @@
-import { notFound } from "next/navigation";
+"use client";
+
+import { useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, TrendingUp, TrendingDown, Minus, Activity, Users, Clock, ChevronRight, Star, BarChart3, CheckCircle, XCircle, AlertTriangle, PieChart } from "lucide-react";
-import { assets, getAssetById } from "@/data/assets";
-import { getPredictionsForAsset, getActivePredictionsForAsset, getAssetPredictionStats, getAllAssetPredictions } from "@/data/assetPredictions";
-import { getPatternsForAsset } from "@/data/patterns";
-import { getFactorsForAsset } from "@/data/factors";
-import { getTopExperts } from "@/data/experts";
-import { calculateAssetConsensus, calculateAssetAccuracy } from "@/lib/assetProbability";
-import { getCredibilityTier, getAccuracyGrade } from "@/lib/credibility";
-import ConsensusGauge from "@/components/ConsensusGauge";
-import PatternCard from "@/components/PatternCard";
-import { formatValue, getDirectionInfo, getChangeColor } from "@/components/AssetCard";
-import type { AssetDirection } from "@/types";
+import {
+  ArrowLeft,
+  TrendingUp,
+  TrendingDown,
+  Activity,
+  BarChart3,
+  CheckCircle,
+  XCircle,
+  Clock,
+  Brain,
+  Target,
+  Loader2,
+} from "lucide-react";
+import { getAssetById } from "@/data/assets";
+import { useLivePrices } from "@/components/LivePriceProvider";
+import { useAIPredictions } from "@/hooks/useAIPredictions";
+import { useAIHistory } from "@/hooks/useAIHistory";
+import DirectionBadge from "@/components/ai/DirectionBadge";
+import ConfidenceBar from "@/components/ai/ConfidenceBar";
+import SubModelBreakdown from "@/components/ai/SubModelBreakdown";
 
-export const revalidate = 43200;
-
-export function generateStaticParams() {
-  return assets.map((a) => ({ id: a.id }));
+function getChangeColor(change: number) {
+  if (change > 0) return "text-red-400";
+  if (change < 0) return "text-blue-400";
+  return "text-slate-400";
 }
 
-function getDirectionArrow(dir: AssetDirection) {
-  if (dir === "강세") return { icon: TrendingUp, color: "text-red-400" };
-  if (dir === "약세") return { icon: TrendingDown, color: "text-blue-400" };
-  if (dir === "변동성확대") return { icon: Activity, color: "text-yellow-400" };
-  return { icon: Minus, color: "text-slate-400" };
+function formatPrice(value: number, unit: string) {
+  if (unit === "USD" || unit === "달러") return `$${value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  if (unit === "원" || unit === "KRW") return `${value.toLocaleString("ko-KR")}원`;
+  if (unit === "포인트" || unit === "pt") return `${value.toLocaleString("ko-KR")}pt`;
+  if (unit === "%") return `${value.toFixed(2)}%`;
+  if (unit === "엔" || unit === "JPY") return `¥${value.toLocaleString("ja-JP")}`;
+  if (unit === "유로" || unit === "EUR") return `€${value.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${value.toLocaleString()} ${unit}`;
 }
 
-export default async function AssetDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+export default function AssetDetailPage() {
+  const params = useParams();
+  const id = params.id as string;
   const asset = getAssetById(id);
-  if (!asset) return notFound();
 
-  const topExperts = getTopExperts(500);
-  const expertMap = new Map(topExperts.map((e) => [e.id, e]));
-  const predictions = getPredictionsForAsset(id);
-  const activePredictions = getActivePredictionsForAsset(id);
-  const resolvedPredictions = predictions.filter((p) => p.result && p.result !== "미결");
-  const allPreds = getAllAssetPredictions();
-  const consensus = calculateAssetConsensus(asset, allPreds, topExperts);
-  const accuracy = calculateAssetAccuracy(id, allPreds);
-  const pStats = getAssetPredictionStats(id);
-  const patterns = getPatternsForAsset(id);
-  const relatedFactors = getFactorsForAsset(id);
+  const { prices } = useLivePrices();
+  const { predictions, isLoading: predictionsLoading } = useAIPredictions();
+  const { accuracy, results, isLoading: historyLoading } = useAIHistory(id);
+
+  if (!asset) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-20 text-center">
+        <p className="text-slate-400 text-lg">존재하지 않는 자산입니다.</p>
+        <Link href="/assets" className="text-blue-400 hover:text-blue-300 text-sm mt-4 inline-block">
+          자산 목록으로 돌아가기
+        </Link>
+      </div>
+    );
+  }
+
+  const livePrice = prices.get(id);
+  const displayPrice = livePrice ? livePrice.price : asset.currentValue;
+  const displayChange = livePrice ? livePrice.changePercent : asset.changePercent;
+
+  const prediction = predictions.find((p) => p.assetId === id);
+
+  const isLoading = predictionsLoading || historyLoading;
+
+  if (isLoading && !prediction && !accuracy) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-20 flex flex-col items-center gap-4">
+        <Loader2 className="w-8 h-8 text-blue-400 animate-spin" />
+        <p className="text-slate-400 text-sm">데이터 로딩 중...</p>
+      </div>
+    );
+  }
+
+  const assetResults = results.filter((r) => r.assetId === id);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
       {/* 뒤로가기 */}
-      <Link href="/assets" className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white mb-6 transition-colors">
+      <Link
+        href="/assets"
+        className="inline-flex items-center gap-1.5 text-sm text-slate-400 hover:text-white mb-6 transition-colors"
+      >
         <ArrowLeft className="w-4 h-4" />
         자산 전망
       </Link>
 
-      {/* Hero */}
+      {/* Hero Section */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 mb-8">
-        <div className="flex items-start justify-between flex-wrap gap-4 mb-6">
+        <div className="flex items-start justify-between flex-wrap gap-4 mb-4">
           <div>
             <p className="text-sm text-slate-500 mb-1">{asset.nameEn}</p>
             <h1 className="text-3xl font-bold text-white mb-2">{asset.name}</h1>
-            <p className="text-sm text-slate-400 max-w-xl">{asset.description}</p>
+            <p className="text-sm text-slate-400 max-w-xl leading-relaxed">
+              {asset.description}
+            </p>
           </div>
           <div className="text-right">
-            <p className="text-3xl font-bold text-white">{formatValue(asset.currentValue, asset.unit)}</p>
-            <p className={`text-lg font-medium ${getChangeColor(asset.changePercent)}`}>
-              {asset.changePercent > 0 ? "+" : ""}{asset.changePercent.toFixed(1)}%
+            <p className="text-3xl font-bold text-white">
+              {formatPrice(displayPrice, asset.unit)}
             </p>
-            <p className="text-xs text-slate-500 mt-1">{asset.updatedAt} 기준</p>
+            <p className={`text-lg font-medium ${getChangeColor(displayChange)}`}>
+              {displayChange > 0 ? "+" : ""}
+              {displayChange.toFixed(2)}%
+            </p>
+            <p className="text-xs text-slate-500 mt-1">
+              {livePrice
+                ? `실시간 (${new Date(livePrice.updatedAt).toLocaleTimeString("ko-KR")})`
+                : `${asset.updatedAt} 기준`}
+            </p>
           </div>
         </div>
 
-        {/* 컨센서스 게이지 */}
-        <ConsensusGauge consensus={consensus} size="lg" />
-
-        {/* 예측 통계 대시보드 */}
-        <div className="mt-4 pt-4 border-t border-slate-800">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            <div className="text-center">
-              <p className="text-xs text-slate-500">총 예측</p>
-              <p className="text-lg font-bold text-white">{pStats.totalPredictions}건</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-slate-500">검증 완료</p>
-              <p className="text-lg font-bold text-white">{pStats.resolvedPredictions}건</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-slate-500">적중률</p>
-              <p className={`text-lg font-bold ${pStats.accuracyRate >= 60 ? "text-emerald-400" : "text-yellow-400"}`}>
-                {pStats.accuracyRate}%
-              </p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-slate-500">상승 예측</p>
-              <p className="text-lg font-bold text-red-400">{pStats.bullish}명 ({pStats.bullishPct}%)</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-slate-500">하락 예측</p>
-              <p className="text-lg font-bold text-blue-400">{pStats.bearish}명 ({pStats.bearishPct}%)</p>
-            </div>
-            <div className="text-center">
-              <p className="text-xs text-slate-500">적중/부분/불일치</p>
-              <p className="text-sm font-bold">
-                <span className="text-emerald-400">{pStats.correct}</span> / <span className="text-yellow-400">{pStats.partial}</span> / <span className="text-red-400">{pStats.incorrect}</span>
-              </p>
-            </div>
+        {/* AI Prediction Badge in Hero */}
+        {prediction && (
+          <div className="flex items-center gap-3 pt-4 border-t border-slate-800">
+            <Brain className="w-5 h-5 text-purple-400" />
+            <span className="text-sm text-slate-400">AI 예측:</span>
+            <DirectionBadge direction={prediction.direction} size="lg" />
+            <span className="text-sm text-slate-300 font-mono">
+              확률 {prediction.probability.toFixed(1)}%
+            </span>
           </div>
-        </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* 왼쪽: 전문가 예측 + 과거 패턴 */}
+        {/* Left Column: AI Analysis + Sub-models + History */}
         <div className="lg:col-span-2 space-y-8">
-          {/* 현재 전문가 예측 */}
-          <section>
-            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-              <Users className="w-5 h-5 text-blue-400" />
-              전문가 예측 ({activePredictions.length}건)
-            </h2>
-            <div className="space-y-3">
-              {activePredictions.map((pred) => {
-                const expert = expertMap.get(pred.expertId);
-                if (!expert) return null;
-                const tier = getCredibilityTier(expert.credibilityScore);
-                const accGrade = getAccuracyGrade(expert.accuracyScore);
-                const dir = getDirectionInfo(pred.direction);
-                const DirIcon = dir.icon;
-
-                return (
-                  <div key={pred.id} className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-                    <div className="flex items-start justify-between gap-4 mb-3">
-                      <div className="flex items-center gap-3">
-                        <Link href={`/experts/${expert.id}`} className="hover:text-blue-300 transition-colors">
-                          <p className="font-semibold text-white">{expert.name}</p>
-                          <p className="text-xs text-slate-500">{expert.affiliation}</p>
-                        </Link>
-                        <div className={`px-2 py-1 rounded border text-xs font-medium ${tier.bg} ${tier.border} ${tier.color}`}>
-                          신뢰도 {expert.credibilityScore}
-                        </div>
-                        <div className="flex items-center gap-1 text-xs">
-                          <Star className="w-3 h-3 text-yellow-400 fill-yellow-400" />
-                          <span className={accGrade.color}>{accGrade.grade}</span>
-                        </div>
-                      </div>
-                      <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border ${dir.bg} ${dir.border}`}>
-                        <DirIcon className={`w-4 h-4 ${dir.color}`} />
-                        <span className={`text-sm font-bold ${dir.color}`}>{pred.direction}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4 text-xs text-slate-500 mb-3">
-                      <span>신뢰도 {pred.confidence}%</span>
-                      <span>{pred.timeframe} 전망</span>
-                      {pred.targetRange && (
-                        <span>목표: {formatValue(pred.targetRange.low, asset.unit)} ~ {formatValue(pred.targetRange.high, asset.unit)}</span>
-                      )}
-                    </div>
-
-                    <p className="text-sm text-slate-300 mb-2">{pred.rationale}</p>
-
-                    {pred.keyAssumptions.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {pred.keyAssumptions.map((a, i) => (
-                          <span key={i} className="text-xs bg-slate-800 text-slate-400 px-2 py-0.5 rounded">
-                            {a}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* 과거 예측 기록 (투명성) */}
-          {resolvedPredictions.length > 0 && (
-            <section>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                <Clock className="w-5 h-5 text-emerald-400" />
-                과거 예측 기록
+          {/* AI Analysis Panel */}
+          {prediction ? (
+            <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-5">
+                <Brain className="w-5 h-5 text-purple-400" />
+                AI 분석
               </h2>
-              <div className="space-y-3">
-                {resolvedPredictions.map((pred) => {
-                  const expert = expertMap.get(pred.expertId);
-                  const resultColor = pred.result === "적중" ? "text-emerald-400 border-emerald-700/30 bg-emerald-900/20"
-                    : pred.result === "부분적중" ? "text-yellow-400 border-yellow-700/30 bg-yellow-900/20"
-                    : "text-red-400 border-red-700/30 bg-red-900/20";
 
-                  return (
-                    <div key={pred.id} className="bg-slate-900 border border-slate-800 rounded-xl p-4">
-                      <div className="flex items-center justify-between mb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-white">{expert?.name || pred.expertId}</span>
-                          <span className="text-xs text-slate-500">{pred.publishedAt}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <div className="bg-slate-800/60 rounded-lg p-4 text-center">
+                  <p className="text-xs text-slate-500 mb-2">예측 방향</p>
+                  <DirectionBadge direction={prediction.direction} size="md" />
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-4">
+                  <p className="text-xs text-slate-500 mb-2 text-center">확률</p>
+                  <p className="text-2xl font-bold text-white text-center">
+                    {prediction.probability.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-4">
+                  <p className="text-xs text-slate-500 mb-2">신뢰도</p>
+                  <ConfidenceBar value={prediction.confidence} label="신뢰도" />
+                </div>
+              </div>
+
+              {/* Rationale */}
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-slate-300 mb-2">분석 근거</h3>
+                <div className="bg-slate-800/40 rounded-lg p-4 border border-slate-700/50">
+                  <p className="text-sm text-slate-300 leading-relaxed whitespace-pre-line">
+                    {prediction.rationale}
+                  </p>
+                </div>
+              </div>
+
+              {/* Sub-model Breakdown */}
+              <div>
+                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-slate-400" />
+                  서브모델 투표 현황
+                </h3>
+                <SubModelBreakdown votes={prediction.subModelVotes} />
+              </div>
+
+              <p className="text-[11px] text-slate-600 mt-4 text-right">
+                생성: {new Date(prediction.generatedAt).toLocaleString("ko-KR")} | 사이클: {prediction.cycleId}
+              </p>
+            </section>
+          ) : (
+            <section className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-center">
+              <Brain className="w-8 h-8 text-slate-600 mx-auto mb-3" />
+              <p className="text-slate-500 text-sm">
+                현재 이 자산에 대한 AI 예측이 없습니다.
+              </p>
+            </section>
+          )}
+
+          {/* AI History Section */}
+          <section className="bg-slate-900 border border-slate-800 rounded-xl p-6">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-5">
+              <Target className="w-5 h-5 text-emerald-400" />
+              AI 예측 히스토리
+            </h2>
+
+            {/* Accuracy Stats */}
+            {accuracy && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <div className="bg-slate-800/60 rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-500 mb-1">총 예측</p>
+                  <p className="text-xl font-bold text-white">
+                    {accuracy.totalPredictions}건
+                  </p>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-500 mb-1">적중</p>
+                  <p className="text-xl font-bold text-emerald-400">
+                    {accuracy.correctPredictions}건
+                  </p>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-500 mb-1">적중률</p>
+                  <p
+                    className={`text-xl font-bold ${
+                      accuracy.accuracy >= 60
+                        ? "text-emerald-400"
+                        : accuracy.accuracy >= 40
+                        ? "text-yellow-400"
+                        : "text-red-400"
+                    }`}
+                  >
+                    {accuracy.accuracy.toFixed(1)}%
+                  </p>
+                </div>
+                <div className="bg-slate-800/60 rounded-lg p-3 text-center">
+                  <p className="text-xs text-slate-500 mb-1">평균 신뢰도</p>
+                  <p className="text-xl font-bold text-blue-400">
+                    {(accuracy.averageConfidence ?? 0).toFixed(1)}%
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Past Prediction Results */}
+            {assetResults.length > 0 ? (
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-slate-400" />
+                  과거 예측 결과
+                </h3>
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                  {assetResults.map((result, idx) => (
+                    <div
+                      key={`${result.cycleId}-${idx}`}
+                      className="bg-slate-800/40 border border-slate-700/50 rounded-lg p-3 flex items-center justify-between gap-3"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        {result.correct === true && (
+                          <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                        )}
+                        {result.correct === false && (
+                          <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
+                        )}
+                        {result.correct === null && (
+                          <Clock className="w-4 h-4 text-slate-500 flex-shrink-0" />
+                        )}
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm text-slate-200 font-medium">
+                              {result.direction}
+                            </span>
+                            <span className="text-xs text-slate-500 font-mono">
+                              {result.probability.toFixed(1)}%
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate">
+                            {new Date(result.generatedAt).toLocaleDateString("ko-KR")}
+                            {result.actualDirection && (
+                              <span className="ml-2">
+                                실제: {result.actualDirection}
+                              </span>
+                            )}
+                          </p>
                         </div>
-                        <span className={`text-xs font-bold px-2 py-0.5 rounded border ${resultColor}`}>
-                          {pred.result}
+                      </div>
+                      <div className="flex-shrink-0">
+                        <span className="text-xs text-slate-500 font-mono">
+                          신뢰도 {result.confidence.toFixed(0)}%
                         </span>
                       </div>
-                      <p className="text-sm text-slate-400 mb-1">{pred.rationale}</p>
-                      {pred.actualOutcome && (
-                        <p className="text-xs text-slate-500 bg-slate-800/60 rounded p-2">
-                          실제 결과: {pred.actualOutcome}
-                        </p>
-                      )}
                     </div>
-                  );
-                })}
+                  ))}
+                </div>
               </div>
-            </section>
-          )}
-
-          {/* 과거 유사 패턴 */}
-          {patterns.length > 0 && (
-            <section>
-              <h2 className="text-lg font-bold text-white flex items-center gap-2 mb-4">
-                <Clock className="w-5 h-5 text-yellow-400" />
-                과거 유사 패턴
-              </h2>
-              <div className="space-y-4">
-                {patterns.map((p) => (
-                  <PatternCard key={p.id} pattern={p} />
-                ))}
-              </div>
-            </section>
-          )}
+            ) : (
+              <p className="text-sm text-slate-500 text-center py-4">
+                아직 과거 예측 결과가 없습니다.
+              </p>
+            )}
+          </section>
         </div>
 
-        {/* 오른쪽: 변동 요인 + 관련 ETF */}
+        {/* Right Column: Related ETFs + Meta */}
         <div className="space-y-6">
-          {/* 변동 요인 */}
-          <section>
+          {/* Asset Info Card */}
+          <section className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2">
               <Activity className="w-4 h-4 text-orange-400" />
-              변동 요인
+              자산 정보
             </h2>
-            <div className="space-y-2">
-              {relatedFactors.map((factor) => {
-                const dir = factor.impactDirection[id];
-                const arrow = dir ? getDirectionArrow(dir as AssetDirection) : { icon: Minus, color: "text-slate-400" };
-                const ArrowIcon = arrow.icon;
-
-                return (
-                  <Link key={factor.id} href={`/factors/${factor.id}`} className="block group">
-                    <div className="bg-slate-900 border border-slate-800 rounded-lg p-3 hover:border-slate-600 transition-colors">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white group-hover:text-blue-300 transition-colors truncate">
-                            {factor.title}
-                          </p>
-                          <p className="text-xs text-slate-500">{factor.category}</p>
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0">
-                          <ArrowIcon className={`w-4 h-4 ${arrow.color}`} />
-                          <ChevronRight className="w-3 h-3 text-slate-600" />
-                        </div>
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+            <dl className="space-y-3 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-slate-500">카테고리</dt>
+                <dd className="text-slate-200">{asset.category}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">단위</dt>
+                <dd className="text-slate-200">{asset.unit}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">현재가</dt>
+                <dd className="text-slate-200">
+                  {formatPrice(displayPrice, asset.unit)}
+                </dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">변동률</dt>
+                <dd className={getChangeColor(displayChange)}>
+                  {displayChange > 0 ? "+" : ""}
+                  {displayChange.toFixed(2)}%
+                </dd>
+              </div>
+            </dl>
           </section>
 
-          {/* 관련 ETF */}
+          {/* Related ETFs */}
           {asset.relatedETFTickers && asset.relatedETFTickers.length > 0 && (
-            <section>
+            <section className="bg-slate-900 border border-slate-800 rounded-xl p-5">
               <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-emerald-400" />
-                관련 한국 ETF
+                관련 ETF
               </h2>
               <div className="space-y-2">
                 {asset.relatedETFTickers.map((ticker) => (
-                  <div key={ticker} className="bg-slate-900 border border-slate-800 rounded-lg p-3">
-                    <span className="text-sm text-slate-300 font-mono">{ticker}</span>
+                  <div
+                    key={ticker}
+                    className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2"
+                  >
+                    <span className="text-sm text-slate-300 font-mono">
+                      {ticker}
+                    </span>
                   </div>
                 ))}
               </div>
-              <Link href="/investment" className="block mt-3 text-sm text-blue-400 hover:text-blue-300 transition-colors">
+              <Link
+                href="/investment"
+                className="block mt-3 text-sm text-blue-400 hover:text-blue-300 transition-colors"
+              >
                 투자전략 페이지에서 상세 확인 →
               </Link>
+            </section>
+          )}
+
+          {/* Quick AI Summary (right sidebar) */}
+          {prediction && (
+            <section className="bg-slate-900 border border-purple-500/20 rounded-xl p-5">
+              <h2 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                AI 요약
+              </h2>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">방향</span>
+                  <DirectionBadge direction={prediction.direction} size="sm" />
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-slate-500">확률</span>
+                  <span className="text-sm font-mono text-white">
+                    {prediction.probability.toFixed(1)}%
+                  </span>
+                </div>
+                <ConfidenceBar value={prediction.confidence} label="신뢰도" size="sm" />
+              </div>
             </section>
           )}
         </div>

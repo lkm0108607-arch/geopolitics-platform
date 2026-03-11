@@ -1,103 +1,3 @@
-export type ExpertDomain =
-  // ── 투자 핵심 도메인 ──
-  | "금리통화정책"
-  | "거시경제"
-  | "한국경제"
-  | "국제금융"
-  | "주식시장"
-  | "채권"
-  | "외환"
-  | "원자재"
-  | "가상자산"
-  | "AI기술"
-  | "반도체"
-  | "부동산"
-  | "재정정책"
-  | "에너지"
-  | "헤지펀드"
-  | "사모투자"
-  // ── 지정학적 투자 리스크 ──
-  | "경제안보"
-  | "글로벌공급망"
-  | "미중관계"
-  | "한반도"
-  | "지정학리스크"
-  // ── 호환성 유지 (레거시) ──
-  | "러우전쟁"
-  | "중동"
-  | "국제법"
-  | "군사안보"
-  | "핵비확산"
-  | "대만해협";
-
-export type ExpertBackground =
-  | "교수"
-  | "연구원"
-  | "전직외교관"
-  | "군출신"
-  | "애널리스트"
-  | "싱크탱크"
-  | "중앙은행"
-  | "정부관료"
-  | "펀드매니저"
-  | "기관리서치";
-
-export type PerspectiveLean =
-  | "현실주의"
-  | "자유주의"
-  | "구성주의"
-  | "안보중심"
-  | "시장중심"
-  | "매파"
-  | "비둘기파"
-  | "케인즈주의"
-  | "통화주의";
-
-export interface PredictionRecord {
-  year: number;
-  month?: number;
-  issue: string;
-  prediction: string;          // 한 줄 요약
-  exactStatement: string;      // 구체적 예측 발언 (인용)
-  actualOutcome: string;       // 실제 발생한 결과
-  accuracyNote: string;        // 적중/불일치 분석
-  outcome: "적중" | "불일치" | "부분적중" | "미결";
-  source?: string;             // 예측 발언 출처
-}
-
-/**
- * 8축 신뢰도 원점수 (각 0-100)
- * 최종 credibilityScore는 lib/credibility.ts의 가중합으로 산출
- * ★ 과거 적중률이 55%로 압도적 — 맞춘 전문가의 의견이 가장 중요
- */
-export interface ExpertRawScores {
-  domainFitScore: number;      // 전문 적합성 (가중치 15%)
-  accuracyScore: number;       // 과거 적중도 ★★★ (가중치 55%) — 압도적 핵심
-  evidenceScore: number;       // 근거 품질 (가중치 12%)
-  institutionScore: number;    // 기관 신뢰도 (가중치 5%)
-  consistencyScore: number;    // 논리 일관성 (가중치 6%)
-  recencyScore: number;        // 최신성 (가중치 4%)
-  publicRatingScore: number;   // 대중 평가 (가중치 1%)
-  biasScore: number;           // 편향 보정: 높을수록 편향 없음 (가중치 2%)
-}
-
-export interface Expert extends ExpertRawScores {
-  id: string;
-  name: string;
-  nameEn: string;
-  affiliation: string;
-  country: string;
-  domains: ExpertDomain[];
-  background: ExpertBackground[];
-  perspective: PerspectiveLean[];
-  credibilityScore: number;    // 8축 가중합 (lib/credibility.ts로 산출)
-  predictionHistory: PredictionRecord[];
-  bio: string;
-  recentView: string;
-  keyKeywords: string[];
-  twitterHandle?: string;
-}
-
 export type ScenarioType =
   | "확전"
   | "현상유지"
@@ -120,7 +20,6 @@ export type ScenarioType =
 
 export interface Forecast {
   id: string;
-  expertId: string;
   issueId: string;
   scenario: ScenarioType;
   probability: number;
@@ -179,8 +78,6 @@ export interface Scenario {
   title: string;
   description: string;
   probability: number;
-  supportingExperts: string[];
-  highCredibilityCount: number;
   keyEvidence: string[];
   counterEvidence: string[];
   triggers: string[];
@@ -196,22 +93,12 @@ export interface Issue {
   probability: number;          // 이슈 발생 확률 (0-100%)
   probTrend: "상승" | "하락" | "유지";
   isActive: boolean;
-  relatedExpertIds: string[];
   createdAt: string;
   updatedAt: string;
   forecasts: Forecast[];
   signals: Signal[];
   timeline: TimelineEvent[];
   scenarios: Scenario[];
-}
-
-export interface RankingEntry {
-  expertId: string;
-  rank: number;
-  category: string;
-  score: number;
-  change: number;
-  reason: string;
 }
 
 // ─── 주간 예측 시스템 ─────────────────────────────────────────────────────
@@ -225,7 +112,6 @@ export interface WeeklyPrediction {
   rationale: string;           // 예측 근거
   result?: "적중" | "부분적중" | "불일치" | "미결";
   actualOutcome?: string;      // 실제 결과 (주간 종료 후 기입)
-  supportingExperts?: string[];  // 해당 예측을 지지하는 전문가 ID 목록
 }
 
 export interface WeeklyReport {
@@ -315,7 +201,6 @@ export interface Asset {
 export interface AssetPrediction {
   id: string;
   assetId: string;
-  expertId: string;
   direction: PredictionDirection;
   confidence: number;                    // 0-100
   timeframe: PredictionTimeframe;
@@ -352,7 +237,6 @@ export interface Factor {
   impactMagnitude: Record<string, ImpactMagnitude>;   // assetId → 강도
   probability: number;
   probTrend: "상승" | "하락" | "유지";
-  relatedExpertIds: string[];
   signals: Signal[];
   timeline: TimelineEvent[];
   isActive: boolean;
@@ -395,8 +279,6 @@ export interface AICyclePrediction {
   rationale: string;              // 예측 근거 요약
   keyEvidence: string[];          // 핵심 근거 목록
   sources: { title: string; url?: string; date: string }[];
-  supportingExpertIds: string[];  // 이 예측을 지지하는 대표 전문가 (상위 노출용)
-  opposingExpertIds: string[];    // 이 예측에 반대하는 대표 전문가 (상위 노출용)
   scenario: string;               // 시나리오 설명
   startPrice: number;             // 예측 시작 시점 자산 가격
   // ─── 전문가 참여 통계 (100K 풀 기반) ───
