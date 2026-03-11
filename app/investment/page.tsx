@@ -535,8 +535,11 @@ export default function InvestmentPage() {
                     {portfolio.map((s) => {
                       const lp = prices.get(s.assetId);
                       const livePrice = lp?.price && lp.price > 0 ? lp.price : null;
-                      const change = livePrice ? lp?.changePercent : null;
                       const entryPrice = entryPricesRef.current.get(s.assetId) ?? null;
+                      // 매수진입가 대비 수익률 (진입가=현재가면 0%)
+                      const returnVsEntry = (livePrice && entryPrice && entryPrice > 0)
+                        ? Math.round(((livePrice - entryPrice) / entryPrice) * 10000) / 100
+                        : null;
                       const ts = tradeStatusRef.current.get(s.assetId);
                       const isBought = ts && (ts.status === "보유중" || ts.status === "익절" || ts.status === "손절");
 
@@ -562,9 +565,9 @@ export default function InvestmentPage() {
                           {livePrice ? (
                             <div>
                               <span className="text-sm font-mono text-emerald-300">{livePrice.toLocaleString("ko-KR")}</span>
-                              {change != null && (
-                                <p className={`text-[10px] font-mono ${change > 0 ? "text-red-400" : change < 0 ? "text-blue-400" : "text-slate-500"}`}>
-                                  {change > 0 ? "+" : ""}{change.toFixed(2)}%
+                              {returnVsEntry != null && returnVsEntry !== 0 && (
+                                <p className={`text-[10px] font-mono ${returnVsEntry > 0 ? "text-red-400" : returnVsEntry < 0 ? "text-blue-400" : "text-slate-500"}`}>
+                                  {returnVsEntry > 0 ? "+" : ""}{returnVsEntry.toFixed(2)}%
                                 </p>
                               )}
                             </div>
@@ -864,12 +867,19 @@ function SolutionCard({ item, livePrice, liveChange, entryPrice: lockedEntryPric
                 </div>
                 <p className="text-base font-bold font-mono text-emerald-300">{currentPrice > 0 ? fmtPrice(currentPrice) : "-"}</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">
-                  {liveChange != null && (
-                    <span className={`${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : ""}`}>
-                      {liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%
-                    </span>
-                  )}
-                  {!liveChange && "실시간"}
+                  {(() => {
+                    const retVsEntry = (currentPrice > 0 && entryPrice && entryPrice > 0)
+                      ? Math.round(((currentPrice - entryPrice) / entryPrice) * 10000) / 100
+                      : null;
+                    if (retVsEntry != null && retVsEntry !== 0) {
+                      return (
+                        <span className={`${retVsEntry > 0 ? "text-red-400" : "text-blue-400"}`}>
+                          진입가 대비 {retVsEntry > 0 ? "+" : ""}{retVsEntry.toFixed(2)}%
+                        </span>
+                      );
+                    }
+                    return "실시간";
+                  })()}
                 </p>
               </div>
 
@@ -1088,6 +1098,59 @@ function WeeklyReportSection({
   const weekStartStr = formatWeekDate(latest.weekStart);
   const weekEndStr = formatWeekDate(latest.weekEnd);
 
+  // ── 라이브 포트폴리오 기반 KPI 계산 ──
+  const liveStats = (() => {
+    if (livePortfolio.length === 0) return null;
+
+    let weightedReturn = 0;
+    let totalWeight = 0;
+    let tpCount = 0, slCount = 0, waitCount = 0, holdCount = 0;
+    let best: { name: string; ret: number } | null = null;
+    let worst: { name: string; ret: number } | null = null;
+
+    for (const s of livePortfolio) {
+      const lp = prices.get(s.assetId);
+      const livePrice = lp?.price && lp.price > 0 ? lp.price : null;
+      const entry = entryPricesRef.current?.get(s.assetId);
+      const ts = tradeStatusRef.current?.get(s.assetId);
+      const status = ts?.status ?? "매수대기";
+
+      if (status === "익절") tpCount++;
+      else if (status === "손절") slCount++;
+      else if (status === "보유중") holdCount++;
+      else waitCount++;
+
+      // 수익률: 매도 완료 시 매도가 기준, 보유중이면 현재가 기준, 대기중이면 0%
+      let ret = 0;
+      if (status === "익절" || status === "손절") {
+        const sellP = ts?.sellPrice ?? livePrice;
+        const buyP = ts?.buyPrice ?? entry;
+        if (sellP && buyP && buyP > 0) ret = Math.round(((sellP - buyP) / buyP) * 10000) / 100;
+      } else if (status === "보유중" && livePrice && entry && entry > 0) {
+        ret = Math.round(((livePrice - entry) / entry) * 10000) / 100;
+      }
+
+      weightedReturn += ret * s.weight;
+      totalWeight += s.weight;
+
+      if (!best || ret > best.ret) best = { name: s.name, ret };
+      if (!worst || ret < worst.ret) worst = { name: s.name, ret };
+    }
+
+    const portfolioReturn = totalWeight > 0 ? Math.round((weightedReturn / totalWeight) * 100) / 100 : 0;
+    // 모두 0%면 best/worst 표시 안 함
+    const allZero = (!best || best.ret === 0) && (!worst || worst.ret === 0);
+
+    return {
+      portfolioReturn,
+      totalCount: livePortfolio.length,
+      tpCount, slCount, holdCount, waitCount,
+      best: allZero ? null : best,
+      worst: allZero ? null : worst,
+      hasActivity: tpCount > 0 || slCount > 0 || holdCount > 0, // 매매 활동이 있는지
+    };
+  })();
+
   return (
     <section className="space-y-3">
       {/* 메인 카드 */}
@@ -1104,30 +1167,30 @@ function WeeklyReportSection({
             {showDetail ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
           </div>
 
-          {/* KPI 행 */}
+          {/* KPI 행 — 라이브 데이터 기반 */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <WeeklyKPI
               label="포트폴리오 수익률"
-              value={`${latest.portfolioReturn > 0 ? "+" : ""}${latest.portfolioReturn}%`}
-              sub={`${latest.totalCount}종목 비중 가중`}
-              color={latest.portfolioReturn > 0 ? "text-red-400" : latest.portfolioReturn < 0 ? "text-blue-400" : "text-slate-400"}
+              value={liveStats && liveStats.hasActivity ? `${liveStats.portfolioReturn > 0 ? "+" : ""}${liveStats.portfolioReturn}%` : "-"}
+              sub={liveStats ? `${liveStats.totalCount}종목 · ${liveStats.waitCount > 0 ? `${liveStats.waitCount}종목 대기중` : "전종목 진입"}` : ""}
+              color={liveStats && liveStats.portfolioReturn > 0 ? "text-red-400" : liveStats && liveStats.portfolioReturn < 0 ? "text-blue-400" : "text-slate-400"}
             />
             <WeeklyKPI
               label="매매 결과"
-              value={`${latest.tpCount}/${latest.slCount}/${latest.holdCount}`}
-              sub="익절/손절/기간종료"
-              color={latest.tpCount > latest.slCount ? "text-emerald-400" : latest.slCount > latest.tpCount ? "text-red-400" : "text-amber-400"}
+              value={liveStats && liveStats.hasActivity ? `${liveStats.tpCount}/${liveStats.slCount}/${liveStats.holdCount}` : "-"}
+              sub={liveStats && liveStats.hasActivity ? "익절/손절/보유중" : `${liveStats?.waitCount ?? 0}종목 매수 대기중`}
+              color={liveStats && liveStats.tpCount > liveStats.slCount ? "text-emerald-400" : liveStats && liveStats.slCount > liveStats.tpCount ? "text-red-400" : "text-amber-400"}
             />
             <WeeklyKPI
               label="최고 성과"
-              value={latest.bestPick ? latest.bestPick.name : "-"}
-              sub={latest.bestPick ? `${latest.bestPick.returnPercent > 0 ? "+" : ""}${latest.bestPick.returnPercent}%` : ""}
+              value={liveStats?.best ? liveStats.best.name : "-"}
+              sub={liveStats?.best ? `${liveStats.best.ret > 0 ? "+" : ""}${liveStats.best.ret}%` : "매매 진행 후 표시"}
               color="text-red-400"
             />
             <WeeklyKPI
               label="최악 성과"
-              value={latest.worstPick ? latest.worstPick.name : "-"}
-              sub={latest.worstPick ? `${latest.worstPick.returnPercent > 0 ? "+" : ""}${latest.worstPick.returnPercent}%` : ""}
+              value={liveStats?.worst ? liveStats.worst.name : "-"}
+              sub={liveStats?.worst ? `${liveStats.worst.ret > 0 ? "+" : ""}${liveStats.worst.ret}%` : "매매 진행 후 표시"}
               color="text-blue-400"
             />
           </div>
