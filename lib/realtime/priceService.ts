@@ -360,6 +360,23 @@ export async function fetchLivePrice(assetId: string): Promise<LivePrice | null>
     return prices.find((p) => p.assetId === assetId) ?? null;
   }
 
+  // 산업 자산 → 대표 ETF 가격으로 프록시
+  const industryProxyTicker: Record<string, string> = {
+    "semiconductor": "091160",
+    "ai-tech": "133690",
+    "ev-battery": "305720",
+    "bio-pharma": "244580",
+    "defense": "409820",
+    "shipbuilding": "139220",
+  };
+  const proxyTicker = industryProxyTicker[assetId];
+  if (proxyTicker) {
+    const etfPrice = await fetchNaverETFPrice(proxyTicker);
+    if (etfPrice) {
+      return { ...etfPrice, assetId };
+    }
+  }
+
   return null;
 }
 
