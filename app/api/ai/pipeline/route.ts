@@ -103,7 +103,7 @@ export async function GET(request: Request) {
       if (weeklyRes.ok) {
         weeklyResult = await weeklyRes.json();
         log.push(
-          `주간 리포트 완료: 정확도 ${weeklyResult?.accuracy ?? 0}%, 매수 평균수익 ${weeklyResult?.avgReturn ?? 0}%`,
+          `주간 자동매매 리포트 완료: 포트폴리오 수익률 ${weeklyResult?.portfolioReturn ?? 0}%, 적중률 ${weeklyResult?.hitRate ?? 0}%, 익절 ${weeklyResult?.tpCount ?? 0}건/손절 ${weeklyResult?.slCount ?? 0}건/기간종료 ${weeklyResult?.holdCount ?? 0}건`,
         );
       } else {
         const errText = await weeklyRes.text().catch(() => "unknown");
@@ -139,7 +139,15 @@ export async function GET(request: Request) {
           }
         : { success: false },
       weeklyReport: weeklyResult
-        ? { success: true, accuracy: weeklyResult.accuracy, avgReturn: weeklyResult.avgReturn }
+        ? {
+            success: true,
+            portfolioReturn: weeklyResult.portfolioReturn,
+            hitRate: weeklyResult.hitRate,
+            tpCount: weeklyResult.tpCount,
+            slCount: weeklyResult.slCount,
+            holdCount: weeklyResult.holdCount,
+            learningApplied: weeklyResult.learningApplied,
+          }
         : kstDay === 1
           ? { success: false }
           : { skipped: true, reason: "월요일에만 실행" },
