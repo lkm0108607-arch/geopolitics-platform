@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
-import { fetchAllLivePrices, ASSET_SYMBOLS, type LivePrice } from "@/lib/realtime/priceService";
+import { fetchAllLivePrices, validatePrices, ASSET_SYMBOLS, type LivePrice } from "@/lib/realtime/priceService";
 import { supabase } from "@/lib/supabase";
 
 /**
  * Live Update API
  *
- * Fetches real-time prices for ALL tracked assets and Korean ETFs
- * from Yahoo Finance and returns the data.
+ * Fetches real-time prices for ALL tracked assets and Korean ETFs.
+ * Korean ETFs: Naver Finance (정확한 거래소 가격)
+ * Global assets: Yahoo Finance
  * Saves snapshots to Supabase every 5th call (to avoid overwhelming DB).
  */
 
@@ -22,6 +23,12 @@ export async function GET() {
 
     if (prices.length === 0) {
       status = "degraded";
+    } else {
+      const issues = validatePrices(prices);
+      if (issues.length > 0) {
+        console.warn(`[Price Validation] ${issues.length}건 이상 감지:`, issues.map(i => `${i.name}: ${i.issue}`).join(", "));
+        status = "degraded";
+      }
     }
   } catch (err) {
     console.error("Failed to fetch live prices:", err);
@@ -78,9 +85,10 @@ export async function GET() {
 // Check if an ETF is in the recommended list
 function isRecommendedETF(assetId: string): boolean {
   const recommendedTickers = new Set([
-    "069500", "091160", "305540", "132030", "360750",
-    "133690", "244580", "451600", "396500", "139220",
-    "102110", "226490", "252670", "305080",
+    "069500", "091160", "305720", "132030", "360750",
+    "133690", "143850", "381180", "272580", "148070",
+    "305080", "271060", "130680", "114800", "252670",
+    "261240", "458730",
   ]);
   const ticker = assetId.replace("etf-", "");
   return recommendedTickers.has(ticker);

@@ -1,6 +1,7 @@
 "use client";
 
 import { useLivePrices } from "@/components/LivePriceProvider";
+import { koreanETFs } from "@/data/koreanETFs";
 
 const ASSET_NAMES: Record<string, string> = {
   kospi: "KOSPI",
@@ -15,6 +16,17 @@ const ASSET_NAMES: Record<string, string> = {
   "usd-jpy": "USD/JPY",
   "us-10y-yield": "미국10Y",
 };
+
+// ETF 이름 룩업 (etf-069500 → "KODEX 200")
+function getAssetName(assetId: string): string {
+  if (ASSET_NAMES[assetId]) return ASSET_NAMES[assetId];
+  if (assetId.startsWith("etf-")) {
+    const ticker = assetId.replace("etf-", "");
+    const etf = koreanETFs.find((e) => e.ticker === ticker);
+    if (etf) return etf.nameKr;
+  }
+  return assetId;
+}
 
 export default function PriceTicker() {
   const { prices } = useLivePrices();
@@ -36,7 +48,7 @@ export default function PriceTicker() {
             : isNegative
               ? "text-blue-400"
               : "text-slate-400";
-          const name = ASSET_NAMES[p.assetId] || p.assetId;
+          const name = getAssetName(p.assetId);
 
           return (
             <span key={`${p.assetId}-${idx}`} className="inline-flex items-center gap-2 px-4">

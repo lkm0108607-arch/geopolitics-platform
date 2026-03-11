@@ -42,7 +42,6 @@ function isETFAsset(assetId: string): boolean {
 
 function getCategoryForPrediction(pred: AIPrediction): FilterTab {
   if (isETFAsset(pred.assetId)) {
-    // ETF 세부 분류
     const ticker = pred.assetId.replace("etf-", "").replace("kodex-", "").replace("tiger-", "");
     const etf = koreanETFs.find((e) => e.ticker === ticker || pred.assetId.includes(e.ticker));
     if (etf) {
@@ -62,25 +61,6 @@ function getCategoryForPrediction(pred: AIPrediction): FilterTab {
   return cat as FilterTab;
 }
 
-// ── Heatmap color helper ──
-
-function heatmapColor(
-  direction: AIPrediction["direction"],
-  confidence: number
-): string {
-  const intensity = Math.round((confidence / 100) * 255);
-  switch (direction) {
-    case "상승":
-      return `rgba(239, 68, 68, ${(intensity / 255) * 0.7 + 0.1})`;
-    case "하락":
-      return `rgba(59, 130, 246, ${(intensity / 255) * 0.7 + 0.1})`;
-    case "변동성확대":
-      return `rgba(234, 179, 8, ${(intensity / 255) * 0.7 + 0.1})`;
-    default:
-      return `rgba(100, 116, 139, ${(intensity / 255) * 0.5 + 0.1})`;
-  }
-}
-
 // ── Main Page ──
 
 export default function PredictionsPage() {
@@ -95,7 +75,7 @@ export default function PredictionsPage() {
 
   const [activeTab, setActiveTab] = useState<FilterTab>("전체");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [showCount, setShowCount] = useState(20); // 초기 20개만 표시
+  const [showCount, setShowCount] = useState(10);
   const [sortBy, setSortBy] = useState<"confidence" | "probability" | "direction" | "name" | "change">("confidence");
 
   // Toggle expanded card
@@ -199,7 +179,7 @@ export default function PredictionsPage() {
       }
 
       // 다음 예측 시간 계산 (매일 14:00 KST)
-      const kstOffset = 9 * 60; // KST = UTC+9
+      const kstOffset = 9 * 60;
       const utcNow = now.getTime() + now.getTimezoneOffset() * 60000;
       const kstNow = new Date(utcNow + kstOffset * 60000);
 
@@ -216,7 +196,7 @@ export default function PredictionsPage() {
     }
 
     updateTimer();
-    const interval = setInterval(updateTimer, 60000); // 1분마다 갱신
+    const interval = setInterval(updateTimer, 60000);
     return () => clearInterval(interval);
   }, [latestGeneratedAt]);
 
@@ -379,7 +359,7 @@ export default function PredictionsPage() {
             return (
               <button
                 key={tab}
-                onClick={() => { setActiveTab(tab); setShowCount(20); }}
+                onClick={() => { setActiveTab(tab); setShowCount(10); }}
                 className={`px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all ${
                   isActive
                     ? "bg-purple-600/30 text-purple-300 border border-purple-500/40"
@@ -555,7 +535,6 @@ export default function PredictionsPage() {
                         <div className="bg-slate-800/60 rounded-lg p-4 border border-slate-700/40 space-y-2">
                           {pred.rationale.split("\n").map((line, i) => {
                             if (!line.trim()) return null;
-                            // 종합 판단 헤더
                             if (line.startsWith("종합 판단:")) {
                               return (
                                 <div key={i} className="text-sm font-semibold text-white pb-2 border-b border-slate-700/40">
@@ -563,7 +542,6 @@ export default function PredictionsPage() {
                                 </div>
                               );
                             }
-                            // 서브모델 분석 제목 (▸)
                             if (line.startsWith("▸")) {
                               return (
                                 <div key={i} className="text-xs text-slate-300 pt-1">
@@ -572,7 +550,6 @@ export default function PredictionsPage() {
                                 </div>
                               );
                             }
-                            // 판단 결과 (→)
                             if (line.trim().startsWith("→")) {
                               const isUp = line.includes("상승");
                               const isDown = line.includes("하락");
@@ -620,15 +597,15 @@ export default function PredictionsPage() {
             {/* 더보기 / 접기 버튼 */}
             {filteredPredictions.length > showCount && (
               <button
-                onClick={() => setShowCount((prev) => prev + 20)}
+                onClick={() => setShowCount((prev) => prev + 10)}
                 className="w-full py-3 rounded-xl border border-slate-700/60 bg-slate-900/50 text-slate-400 hover:text-white hover:border-purple-500/40 transition-all text-sm"
               >
                 더보기 ({filteredPredictions.length - showCount}개 남음)
               </button>
             )}
-            {showCount > 20 && (
+            {showCount > 10 && (
               <button
-                onClick={() => setShowCount(20)}
+                onClick={() => setShowCount(10)}
                 className="w-full py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
               >
                 접기
@@ -637,201 +614,57 @@ export default function PredictionsPage() {
           </div>
         )}
 
-        {/* ─── 상승/하락 요약 ─── */}
-        {predictions.length > 0 && (
-          <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* 상승 예측 종목 */}
-            <div className="rounded-xl border border-red-500/20 bg-red-500/5 p-5">
-              <h3 className="text-sm font-bold text-red-400 mb-3 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4" />
-                상승 예측 ({predictions.filter((p) => p.direction === "상승").length}종목)
-              </h3>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                {predictions
-                  .filter((p) => p.direction === "상승")
-                  .sort((a, b) => b.confidence - a.confidence)
-                  .map((pred) => {
-                    const asset = getAssetById(pred.assetId);
-                    return (
-                      <div key={pred.assetId} className="flex items-center justify-between text-xs py-1 px-2 rounded hover:bg-red-500/10">
-                        <span className="text-slate-300 truncate flex-1">{asset?.name ?? pred.assetId}</span>
-                        <span className="text-red-400 font-mono ml-2">{pred.probability}%</span>
-                        <span className="text-slate-500 font-mono ml-2 w-12 text-right">신뢰 {pred.confidence}%</span>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-
-            {/* 하락 예측 종목 */}
-            <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-5">
-              <h3 className="text-sm font-bold text-blue-400 mb-3 flex items-center gap-2">
-                <TrendingDown className="w-4 h-4" />
-                하락 예측 ({predictions.filter((p) => p.direction === "하락").length}종목)
-              </h3>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                {predictions
-                  .filter((p) => p.direction === "하락")
-                  .sort((a, b) => b.confidence - a.confidence)
-                  .map((pred) => {
-                    const asset = getAssetById(pred.assetId);
-                    return (
-                      <div key={pred.assetId} className="flex items-center justify-between text-xs py-1 px-2 rounded hover:bg-blue-500/10">
-                        <span className="text-slate-300 truncate flex-1">{asset?.name ?? pred.assetId}</span>
-                        <span className="text-blue-400 font-mono ml-2">{pred.probability}%</span>
-                        <span className="text-slate-500 font-mono ml-2 w-12 text-right">신뢰 {pred.confidence}%</span>
-                      </div>
-                    );
-                  })}
-              </div>
-            </div>
-          </section>
-        )}
-
-        {/* ─── 5. Confidence Heatmap ─── */}
-        {predictions.length > 0 && (
-          <section className="space-y-3">
-            <h2 className="text-base font-bold text-white flex items-center gap-2">
-              <Activity className="w-4 h-4 text-yellow-400" />
-              신뢰도 히트맵
-            </h2>
-            <p className="text-xs text-slate-500">
-              색상 강도는 신뢰도, 색상은 방향을 나타냅니다 (빨강: 상승, 파랑: 하락,
-              노랑: 변동성확대, 회색: 보합)
-            </p>
-            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
-              {[...predictions]
-                .sort((a, b) => b.confidence - a.confidence)
-                .map((pred) => {
-                  const asset = getAssetById(pred.assetId);
-                  const name = asset?.name ?? pred.assetId;
-                  return (
-                    <div
-                      key={`hm-${pred.assetId}`}
-                      className="relative rounded-lg p-3 border border-slate-700/40 text-center transition-transform hover:scale-105 cursor-default"
-                      style={{
-                        backgroundColor: heatmapColor(
-                          pred.direction,
-                          pred.confidence
-                        ),
-                      }}
-                      title={`${name}: ${pred.direction} (신뢰도 ${pred.confidence}%)`}
-                    >
-                      <div className="text-[11px] font-medium text-white truncate">
-                        {name}
-                      </div>
-                      <div className="text-[10px] text-white/70 mt-0.5">
-                        {pred.confidence}%
-                      </div>
+        {/* ─── 정확도 + 학습 회고 ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {/* 적중률 */}
+          <div className="bg-slate-900/70 border border-slate-700/60 rounded-lg p-3">
+            <h3 className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-2">
+              <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+              자산별 적중률
+              {perAssetAccuracy.length > 0 && <span className="text-[10px] text-slate-500 font-normal">TOP {Math.min(perAssetAccuracy.length, 5)}</span>}
+            </h3>
+            {historyLoading ? (
+              <Loader2 className="w-4 h-4 animate-spin text-slate-500 mx-auto my-4" />
+            ) : perAssetAccuracy.length > 0 ? (
+              <div className="space-y-1">
+                {perAssetAccuracy.slice(0, 5).map((item) => (
+                  <div key={item.assetId} className="flex items-center gap-2 text-[11px]">
+                    <span className="text-slate-300 w-20 truncate shrink-0">{item.name}</span>
+                    <div className="flex-1 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                      <div className={`h-full rounded-full ${item.accuracy >= 70 ? "bg-emerald-500" : item.accuracy >= 50 ? "bg-blue-500" : "bg-red-500"}`} style={{ width: `${item.accuracy}%` }} />
                     </div>
-                  );
-                })}
-            </div>
-          </section>
-        )}
-
-        {/* ─── 6. Past Accuracy Section ─── */}
-        <section className="space-y-4">
-          <h2 className="text-base font-bold text-white flex items-center gap-2">
-            <BarChart3 className="w-4 h-4 text-emerald-400" />
-            과거 예측 정확도
-          </h2>
-
-          {historyLoading ? (
-            <div className="flex items-center justify-center py-10 text-slate-500">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              <span className="text-sm">데이터 불러오는 중...</span>
-            </div>
-          ) : (
-            <>
-              {/* Per-asset accuracy bars */}
-              {perAssetAccuracy.length > 0 ? (
-                <div className="bg-slate-900/70 border border-slate-700/60 rounded-xl p-4 md:p-5 space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-300 mb-3">
-                    자산별 적중률
-                  </h3>
-                  <div className="space-y-2.5">
-                    {perAssetAccuracy.map((item) => {
-                      const barColor =
-                        item.accuracy >= 80
-                          ? "bg-emerald-500"
-                          : item.accuracy >= 60
-                            ? "bg-blue-500"
-                            : item.accuracy >= 40
-                              ? "bg-yellow-500"
-                              : "bg-red-500";
-                      return (
-                        <div
-                          key={item.assetId}
-                          className="flex items-center gap-3 text-xs"
-                        >
-                          <span className="text-slate-300 font-medium w-28 truncate flex-shrink-0">
-                            {item.name}
-                          </span>
-                          <div className="flex-1 bg-slate-800 rounded-full h-3 relative overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${barColor} transition-all duration-500`}
-                              style={{ width: `${item.accuracy}%` }}
-                            />
-                          </div>
-                          <span className="text-white font-bold w-12 text-right flex-shrink-0">
-                            {item.accuracy}%
-                          </span>
-                          <span className="text-slate-500 w-16 text-right flex-shrink-0 text-[10px]">
-                            {item.correct}/{item.total}건
-                          </span>
-                        </div>
-                      );
-                    })}
+                    <span className="text-white font-mono w-8 text-right">{item.accuracy}%</span>
                   </div>
-                </div>
-              ) : (
-                <div className="bg-slate-900/70 border border-slate-700/60 rounded-xl p-8 text-center">
-                  <p className="text-sm text-slate-500">
-                    아직 평가된 자산별 정확도 데이터가 없습니다
-                  </p>
-                </div>
-              )}
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500">매일 14:00 KST 자동 평가 후 표시됩니다</p>
+            )}
+          </div>
 
-              {/* Learning log entries (last 5) */}
-              {learningLogs.length > 0 && (
-                <div className="bg-slate-900/70 border border-slate-700/60 rounded-xl p-4 md:p-5 space-y-3">
-                  <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
-                    <BookOpen className="w-3.5 h-3.5 text-purple-400" />
-                    AI 학습 로그
-                  </h3>
-                  <div className="space-y-2">
-                    {learningLogs.slice(0, 5).map((log, idx) => (
-                      <div
-                        key={`log-${idx}`}
-                        className="bg-slate-800/50 border border-slate-700/40 rounded-lg p-3"
-                      >
-                        <div className="flex items-center gap-3 mb-1.5">
-                          <span className="text-[10px] text-slate-500 font-mono">
-                            {new Date(log.timestamp).toLocaleString("ko-KR", {
-                              month: "short",
-                              day: "numeric",
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </span>
-                          <span className="text-[10px] bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded">
-                            {log.cycleId}
-                          </span>
-                        </div>
-                        <p className="text-xs text-slate-300 mb-1">
-                          {log.adjustments}
-                        </p>
-                        <p className="text-[11px] text-slate-500">
-                          {log.reason}
-                        </p>
-                      </div>
-                    ))}
+          {/* 학습 회고 */}
+          <div className="bg-slate-900/70 border border-slate-700/60 rounded-lg p-3">
+            <h3 className="text-xs font-semibold text-slate-300 flex items-center gap-1.5 mb-2">
+              <BookOpen className="w-3.5 h-3.5 text-purple-400" />
+              AI 학습 회고
+              {learningLogs.length > 0 && <span className="text-[10px] text-slate-500 font-normal">최근 {Math.min(learningLogs.length, 3)}건</span>}
+            </h3>
+            {learningLogs.length > 0 ? (
+              <div className="space-y-1.5">
+                {learningLogs.slice(0, 3).map((log, idx) => (
+                  <div key={`log-${idx}`} className="bg-slate-800/40 rounded px-2 py-1.5 border border-slate-700/30">
+                    <div className="flex items-center gap-1.5 text-[10px] mb-0.5">
+                      <span className="text-purple-300 font-mono">{log.cycleId}</span>
+                      <span className="text-slate-600">{new Date(log.timestamp).toLocaleDateString("ko-KR", { month: "short", day: "numeric" })}</span>
+                    </div>
+                    {log.reason && <p className="text-[11px] text-slate-400 line-clamp-2">{log.reason}</p>}
                   </div>
-                </div>
-              )}
-            </>
-          )}
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-slate-500">첫 평가 사이클 완료 후 학습 기록이 표시됩니다</p>
+            )}
+          </div>
         </section>
       </div>
     </div>

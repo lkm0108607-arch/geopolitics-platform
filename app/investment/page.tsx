@@ -31,6 +31,8 @@ import {
 import { useAIPredictions } from "@/hooks/useAIPredictions";
 import type { AIPrediction } from "@/hooks/useAIPredictions";
 import { useLivePrices } from "@/components/LivePriceProvider";
+import { useWeeklyReport } from "@/hooks/useWeeklyReport";
+import type { WeeklyReportData, PortfolioResult } from "@/hooks/useWeeklyReport";
 import { getAssetById } from "@/data/assets";
 
 // ── 투자 시그널 타입 ──────────────────────────────────────────────────────────
@@ -282,6 +284,8 @@ const verdictBg: Record<string, string> = {
 export default function InvestmentPage() {
   const { predictions, cycleId, isLoading, error, refresh } = useAIPredictions();
   const { prices, lastFetched, isLoading: pricesLoading } = useLivePrices();
+  const { reports: weeklyReports, isLoading: weeklyLoading } = useWeeklyReport();
+  const [showWeeklyDetail, setShowWeeklyDetail] = useState(false);
   const [activeTab, setActiveTab] = useState<"action" | "buy" | "sell" | "hold">("action");
   const [showCount, setShowCount] = useState(15);
   const [sortBy, setSortBy] = useState<"signal" | "return" | "risk" | "timing" | "name">("signal");
@@ -543,6 +547,14 @@ export default function InvestmentPage() {
             </div>
           </section>
         )}
+
+        {/* ── 주간 AI 성적표 ────────────────────────── */}
+        <WeeklyReportSection
+          reports={weeklyReports}
+          isLoading={weeklyLoading}
+          showDetail={showWeeklyDetail}
+          onToggleDetail={() => setShowWeeklyDetail((v) => !v)}
+        />
 
         {/* ── 정렬 + 탭 ────────────────────────────── */}
         {solutions.length > 0 && (
@@ -920,4 +932,212 @@ function TimingBox({ label, value, sub, color, icon }: {
       {sub && <p className="text-[10px] text-slate-500">{sub}</p>}
     </div>
   );
+}
+
+// ── 주간 AI 자동매매 성적표 ──────────────────────────────────────────────────────
+
+const exitReasonStyle: Record<string, { bg: string; text: string; icon: string }> = {
+  "익절": { bg: "bg-emerald-500/15", text: "text-emerald-400", icon: "💰" },
+  "손절": { bg: "bg-red-500/15", text: "text-red-400", icon: "🛑" },
+  "기간종료": { bg: "bg-slate-500/15", text: "text-slate-400", icon: "⏰" },
+};
+
+function WeeklyReportSection({
+  reports,
+  isLoading,
+  showDetail,
+  onToggleDetail,
+}: {
+  reports: WeeklyReportData[];
+  isLoading: boolean;
+  showDetail: boolean;
+  onToggleDetail: () => void;
+}) {
+  if (isLoading) {
+    return (
+      <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-5 animate-pulse">
+        <div className="h-4 bg-slate-800 rounded w-40 mb-4" />
+        <div className="h-20 bg-slate-800 rounded" />
+      </section>
+    );
+  }
+
+  if (reports.length === 0) {
+    return (
+      <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
+        <div className="flex items-center gap-2 mb-2">
+          <CalendarDays className="w-5 h-5 text-amber-400" />
+          <h2 className="text-base font-bold">주간 AI 자동매매 성적표</h2>
+        </div>
+        <p className="text-xs text-slate-500">
+          매주 월요일에 지난주 AI 추천 포트폴리오의 자동매매 시뮬레이션 성적이 생성됩니다. 각 종목별 익절/손절 결과를 확인할 수 있습니다.
+        </p>
+      </section>
+    );
+  }
+
+  const latest = reports[0];
+  const weekStartStr = formatWeekDate(latest.weekStart);
+  const weekEndStr = formatWeekDate(latest.weekEnd);
+
+  return (
+    <section className="space-y-3">
+      {/* 메인 카드 */}
+      <div className="rounded-xl border border-amber-500/20 bg-gradient-to-r from-amber-500/5 to-slate-900/70 overflow-hidden">
+        <button onClick={onToggleDetail} className="w-full p-5 hover:bg-slate-800/20 transition-colors text-left">
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <CalendarDays className="w-5 h-5 text-amber-400" />
+              <h2 className="text-base font-bold text-white">주간 자동매매 성적표</h2>
+              <span className="text-[11px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
+                {weekStartStr} ~ {weekEndStr}
+              </span>
+            </div>
+            {showDetail ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+          </div>
+
+          {/* KPI 행 */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <WeeklyKPI
+              label="포트폴리오 수익률"
+              value={`${latest.portfolioReturn > 0 ? "+" : ""}${latest.portfolioReturn}%`}
+              sub={`${latest.totalCount}종목 비중 가중`}
+              color={latest.portfolioReturn > 0 ? "text-red-400" : latest.portfolioReturn < 0 ? "text-blue-400" : "text-slate-400"}
+            />
+            <WeeklyKPI
+              label="매매 결과"
+              value={`${latest.tpCount}/${latest.slCount}/${latest.holdCount}`}
+              sub="익절/손절/기간종료"
+              color={latest.tpCount > latest.slCount ? "text-emerald-400" : latest.slCount > latest.tpCount ? "text-red-400" : "text-amber-400"}
+            />
+            <WeeklyKPI
+              label="최고 성과"
+              value={latest.bestPick ? latest.bestPick.name : "-"}
+              sub={latest.bestPick ? `${latest.bestPick.returnPercent > 0 ? "+" : ""}${latest.bestPick.returnPercent}%` : ""}
+              color="text-red-400"
+            />
+            <WeeklyKPI
+              label="최악 성과"
+              value={latest.worstPick ? latest.worstPick.name : "-"}
+              sub={latest.worstPick ? `${latest.worstPick.returnPercent > 0 ? "+" : ""}${latest.worstPick.returnPercent}%` : ""}
+              color="text-blue-400"
+            />
+          </div>
+        </button>
+
+        {/* 상세 펼침 */}
+        {showDetail && (
+          <div className="border-t border-slate-700/50 p-5 space-y-4 bg-slate-950/40">
+            {/* 포트폴리오 종목별 자동매매 성적 */}
+            {latest.portfolio.length > 0 && (
+              <div>
+                <h3 className="text-xs font-semibold text-amber-400 mb-3 flex items-center gap-1.5">
+                  <PieChart className="w-3.5 h-3.5" />
+                  종목별 자동매매 결과 ({latest.portfolio.length}종목)
+                </h3>
+                <div className="space-y-2">
+                  {[...latest.portfolio].sort((a, b) => b.actualReturn - a.actualReturn).map((r) => (
+                    <PortfolioTradeRow key={r.assetId} result={r} />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI 주간 회고 */}
+            {latest.weeklyLesson && (
+              <div className="bg-slate-800/60 rounded-lg p-3 border border-slate-700/40">
+                <h3 className="text-xs font-semibold text-purple-300 mb-1.5 flex items-center gap-1.5">
+                  <Brain className="w-3.5 h-3.5" />
+                  AI 주간 매매 회고
+                </h3>
+                <div className="space-y-0.5">
+                  {latest.weeklyLesson.split("\n").map((line, i) => (
+                    <p key={i} className={`text-[11px] ${line.startsWith("→") ? "text-amber-400 pl-2" : "text-slate-400"}`}>
+                      {line}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 과거 주차 성적 미니 히스토리 */}
+      {reports.length > 1 && (
+        <div className="flex items-center gap-2 overflow-x-auto pb-1">
+          <span className="text-[10px] text-slate-500 shrink-0">지난 성적:</span>
+          {reports.slice(1, 5).map((r) => (
+            <div key={r.weekStart} className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 border border-slate-800 text-[10px]">
+              <span className="text-slate-500">{formatWeekDate(r.weekStart)}~{formatWeekDate(r.weekEnd)}</span>
+              <span className={`font-mono font-bold ${r.portfolioReturn > 0 ? "text-red-400" : "text-blue-400"}`}>
+                {r.portfolioReturn > 0 ? "+" : ""}{r.portfolioReturn}%
+              </span>
+              <span className="text-slate-600">
+                {r.tpCount}익/{r.slCount}손
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function WeeklyKPI({ label, value, sub, color }: {
+  label: string; value: string; sub: string; color: string;
+}) {
+  return (
+    <div className="bg-slate-800/40 rounded-lg p-3 border border-slate-700/30">
+      <p className="text-[10px] text-slate-500 mb-1">{label}</p>
+      <p className={`text-lg font-bold font-mono ${color}`}>{value}</p>
+      {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
+    </div>
+  );
+}
+
+function PortfolioTradeRow({ result }: { result: PortfolioResult }) {
+  const exitStyle = exitReasonStyle[result.exitReason] ?? exitReasonStyle["기간종료"];
+  const fmtPrice = (p: number | null) => p ? p.toLocaleString("ko-KR") : "-";
+
+  return (
+    <div className="rounded-lg bg-slate-900/60 border border-slate-800/60 p-3 hover:bg-slate-800/40 transition">
+      {/* 상단: 종목명 + 시그널 + 청산 태그 */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${result.wasCorrect ? "bg-emerald-400" : "bg-red-400"}`} />
+          <span className="text-sm text-white font-medium">{result.name}</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+            result.signal === "강력매수" ? "bg-red-500/20 text-red-400" :
+            result.signal === "매수" ? "bg-orange-500/20 text-orange-400" :
+            "bg-slate-500/20 text-slate-400"
+          }`}>
+            {result.signal}
+          </span>
+          <span className="text-[10px] text-slate-600 font-mono">비중 {result.weight}%</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-[10px] px-2 py-0.5 rounded-full ${exitStyle.bg} ${exitStyle.text}`}>
+            {exitStyle.icon} {result.exitReason}{result.exitDay ? ` ${result.exitDay}일차` : ""}
+          </span>
+          <span className={`text-sm font-mono font-bold ${result.actualReturn > 0 ? "text-red-400" : result.actualReturn < 0 ? "text-blue-400" : "text-slate-400"}`}>
+            {result.actualReturn > 0 ? "+" : ""}{result.actualReturn.toFixed(2)}%
+          </span>
+        </div>
+      </div>
+      {/* 하단: 매매가 정보 */}
+      <div className="flex items-center gap-4 text-[10px] text-slate-500">
+        <span>진입 <span className="text-slate-400 font-mono">{fmtPrice(result.entryPrice)}</span></span>
+        <span>청산 <span className="text-slate-400 font-mono">{fmtPrice(result.exitPrice)}</span></span>
+        <span className="hidden sm:inline">익절가 <span className="text-red-400/70 font-mono">{fmtPrice(result.tpTarget)}</span></span>
+        <span className="hidden sm:inline">손절가 <span className="text-blue-400/70 font-mono">{fmtPrice(result.slTarget)}</span></span>
+        <span className="ml-auto">P&L <span className={`font-mono ${result.pnl > 0 ? "text-red-400" : result.pnl < 0 ? "text-blue-400" : "text-slate-400"}`}>{result.pnl > 0 ? "+" : ""}{result.pnl}%</span></span>
+      </div>
+    </div>
+  );
+}
+
+function formatWeekDate(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
 }

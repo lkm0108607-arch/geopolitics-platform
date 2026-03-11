@@ -10,9 +10,9 @@ import {
   saveModelWeights,
   saveLearningLog,
 } from "@/lib/ai/dataService";
-import { ASSET_SYMBOLS } from "@/lib/realtime/priceService";
+import { ASSET_SYMBOLS, fetchLivePrice } from "@/lib/realtime/priceService";
 
-// ─── Yahoo Finance 현재 가격 가져오기 ──────────────────────────────────────────
+// ─── 현재 가격 가져오기 (네이버 금융 + Yahoo Finance) ─────────────────────────
 
 interface CurrentPriceData {
   price: number;
@@ -20,34 +20,17 @@ interface CurrentPriceData {
   previousClose: number;
 }
 
-async function fetchCurrentPrice(
-  symbol: string,
+async function fetchCurrentPriceForAsset(
+  assetId: string,
 ): Promise<CurrentPriceData | null> {
   try {
-    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=5d`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      },
-      next: { revalidate: 0 },
-    });
-
-    if (!res.ok) return null;
-
-    const data = await res.json();
-    const result = data?.chart?.result?.[0];
-    if (!result) return null;
-
-    const price = result.meta.regularMarketPrice;
-    const previousClose = result.meta.previousClose ?? price;
-    const changePercent =
-      previousClose > 0 ? ((price - previousClose) / previousClose) * 100 : 0;
+    const livePrice = await fetchLivePrice(assetId);
+    if (!livePrice || livePrice.price <= 0) return null;
 
     return {
-      price,
-      changePercent: parseFloat(changePercent.toFixed(4)),
-      previousClose,
+      price: livePrice.price,
+      changePercent: livePrice.changePercent,
+      previousClose: livePrice.previousClose,
     };
   } catch {
     return null;
@@ -90,8 +73,7 @@ export async function POST(request: Request) {
     // 2. 현재 모델 가중치 조회
     let currentWeights = await getModelWeights();
 
-    // 3. Yahoo Finance에서 현재 시장 데이터 가져오기
-    // ASSET_SYMBOLS에서 전체 심볼 매핑 사용 (ETF 포함)
+    // 3. 현재 시장 데이터 가져오기 (네이버 금융 + Yahoo Finance)
     const priceResults: Record<string, CurrentPriceData | null> = {};
 
     // 배치로 가격 조회 (한번에 10개씩)
@@ -99,9 +81,7 @@ export async function POST(request: Request) {
     for (let i = 0; i < predictions.length; i += batchSize) {
       const batch = predictions.slice(i, i + batchSize);
       const pricePromises = batch.map(async (pred) => {
-        const symbol = ASSET_SYMBOLS[pred.asset_id];
-        if (!symbol) return;
-        const priceData = await fetchCurrentPrice(symbol);
+        const priceData = await fetchCurrentPriceForAsset(pred.asset_id);
         priceResults[pred.asset_id] = priceData;
       });
       await Promise.allSettled(pricePromises);

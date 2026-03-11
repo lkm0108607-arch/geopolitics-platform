@@ -15,49 +15,36 @@ import { analyzeFundamentals } from "@/lib/ai/fundamentalAnalysis";
 import { computeAdvancedSignals } from "@/lib/ai/advancedAnalysis";
 import { analyzeHistoricalPatterns } from "@/lib/ai/historicalPatternAnalysis";
 import { koreanETFs } from "@/data/koreanETFs";
+import { fetchAllLivePrices, type LivePrice } from "@/lib/realtime/priceService";
 
-// ─── Yahoo Finance 심볼 매핑 ──────────────────────────────────────────────────
+// ─── 자산 ID 매핑 ─────────────────────────────────────────────────────────────
 
-// 주요 글로벌 자산
-const GLOBAL_SYMBOL_TO_ASSET: Record<string, string> = {
-  "^KS11": "kospi",
+// Yahoo Finance로 히스토리 데이터를 가져올 글로벌 자산만 (네이버 미지원 자산)
+const YAHOO_GLOBAL_SYMBOLS: Record<string, string> = {
   "^GSPC": "sp500",
   "^IXIC": "nasdaq",
-  "^KQ11": "kosdaq",
-  "DX-Y.NYB": "dxy",
   "GC=F": "gold",
   "CL=F": "wti-oil",
   "HG=F": "copper",
-  "KRW=X": "usd-krw",
-  "JPY=X": "usd-jpy",
   "^TNX": "us-10y-yield",
 };
 
-// 국내 ETF 전종목 — koreanETFs 데이터베이스에서 자동 생성
-function buildETFSymbolMap(): Record<string, string> {
-  const map: Record<string, string> = {};
-  for (const etf of koreanETFs) {
-    const yahooSymbol = `${etf.ticker}.KS`;
-    // assetId: ticker를 그대로 사용 (예: "069500", "091160")
-    map[yahooSymbol] = `etf-${etf.ticker}`;
-  }
-  return map;
-}
+// 한국 자산 (네이버 금융 실시간 + Supabase 히스토리)
+const NAVER_ASSET_IDS = [
+  "kospi", "kosdaq", "usd-krw", "usd-jpy", "dxy",
+  ...koreanETFs.map((etf) => `etf-${etf.ticker}`),
+];
 
-const ETF_SYMBOL_TO_ASSET = buildETFSymbolMap();
+// 전체 예측 대상 자산 ID 목록
+const ALL_ASSET_IDS = [
+  ...Object.values(YAHOO_GLOBAL_SYMBOLS),
+  ...NAVER_ASSET_IDS,
+];
 
-// 전체 심볼 매핑 (글로벌 + ETF)
-const SYMBOL_TO_ASSET: Record<string, string> = {
-  ...GLOBAL_SYMBOL_TO_ASSET,
-  ...ETF_SYMBOL_TO_ASSET,
-};
-
+const SYMBOL_TO_ASSET: Record<string, string> = { ...YAHOO_GLOBAL_SYMBOLS };
 const ASSET_TO_SYMBOL: Record<string, string> = Object.fromEntries(
-  Object.entries(SYMBOL_TO_ASSET).map(([sym, asset]) => [asset, sym]),
+  Object.entries(YAHOO_GLOBAL_SYMBOLS).map(([sym, asset]) => [asset, sym]),
 );
-
-// Yahoo Finance에서 지원되는 자산 ID 목록
-const YAHOO_ASSET_IDS = Object.values(SYMBOL_TO_ASSET);
 
 // ─── Yahoo Finance 데이터 가져오기 ──────────────────────────────────────────────
 
@@ -155,6 +142,28 @@ async function fetchYahooBatch(
 }
 
 /**
+ * Supabase market_snapshots에서 히스토리를 로드하여 assetDataMap에 추가
+ */
+async function loadFromSupabase(
+  assetId: string,
+  assetDataMap: Record<string, PriceBar[]>,
+): Promise<void> {
+  try {
+    const history = await getMarketHistory(assetId, 90);
+    if (history.length >= 20) {
+      assetDataMap[assetId] = history.map((h) => ({
+        close: Number(h.close_price),
+        high: h.high_price != null ? Number(h.high_price) : undefined,
+        low: h.low_price != null ? Number(h.low_price) : undefined,
+        volume: h.volume != null ? Number(h.volume) : undefined,
+      }));
+    }
+  } catch {
+    // 히스토리 없으면 건너뛰기
+  }
+}
+
+/**
  * 사이클 ID 생성: ai-cycle-YYYY-MM-DD
  */
 function generateCycleId(): string {
@@ -169,37 +178,47 @@ export async function POST() {
   try {
     const cycleId = generateCycleId();
 
-    // 1. Yahoo Finance에서 시장 데이터 가져오기 + 거시경제 데이터 수집
-    const symbols = Object.keys(SYMBOL_TO_ASSET);
-    const [yahooData, collectedData] = await Promise.all([
-      fetchYahooHistorical(symbols),
+    // 1. 데이터 수집: Yahoo(글로벌 히스토리) + Naver(한국 실시간) + 거시경제
+    const yahooSymbols = Object.keys(YAHOO_GLOBAL_SYMBOLS);
+    const [yahooData, naverPrices, collectedData] = await Promise.all([
+      fetchYahooHistorical(yahooSymbols),
+      fetchAllLivePrices().catch(() => [] as LivePrice[]),
       collectAllData().catch((err) => {
         console.error("거시경제 데이터 수집 실패 (계속 진행):", err);
         return null;
       }),
     ]);
 
+    // 네이버 실시간 가격을 Supabase에 저장 (히스토리 축적)
+    for (const lp of naverPrices) {
+      try {
+        await saveMarketSnapshot(lp.assetId, {
+          closePrice: lp.price,
+          changePercent: lp.changePercent,
+        });
+      } catch {
+        // 저장 실패는 예측에 영향 주지 않음
+      }
+    }
+
     // 2. 현재 모델 가중치 조회
     const weights = await getModelWeights();
 
-    // 3. 사용 가능한 자산 데이터 수집 (Yahoo + Supabase 히스토리 보완)
+    // 3. 사용 가능한 자산 데이터 수집
     const assetDataMap: Record<string, PriceBar[]> = {};
 
-    for (const assetId of YAHOO_ASSET_IDS) {
-      // Yahoo에서 가져온 데이터가 있으면 사용
+    // 3a. 글로벌 자산: Yahoo 히스토리 우선 → Supabase 보완
+    for (const [, assetId] of Object.entries(YAHOO_GLOBAL_SYMBOLS)) {
       if (yahooData[assetId] && yahooData[assetId].length >= 20) {
         assetDataMap[assetId] = yahooData[assetId];
 
-        // 최신 가격을 market_snapshots에 저장
         const latestBar = yahooData[assetId][yahooData[assetId].length - 1];
-        const prevBar =
-          yahooData[assetId].length >= 2
-            ? yahooData[assetId][yahooData[assetId].length - 2]
-            : null;
+        const prevBar = yahooData[assetId].length >= 2
+          ? yahooData[assetId][yahooData[assetId].length - 2]
+          : null;
         const changePercent = prevBar
           ? ((latestBar.close - prevBar.close) / prevBar.close) * 100
           : undefined;
-
         try {
           await saveMarketSnapshot(assetId, {
             closePrice: latestBar.close,
@@ -208,25 +227,15 @@ export async function POST() {
             volume: latestBar.volume,
             changePercent,
           });
-        } catch {
-          // 스냅샷 저장 실패는 예측에 영향 주지 않음
-        }
+        } catch { /* ignore */ }
       } else {
-        // Yahoo 데이터가 부족하면 Supabase에서 보완
-        try {
-          const history = await getMarketHistory(assetId, 90);
-          if (history.length >= 20) {
-            assetDataMap[assetId] = history.map((h) => ({
-              close: Number(h.close_price),
-              high: h.high_price != null ? Number(h.high_price) : undefined,
-              low: h.low_price != null ? Number(h.low_price) : undefined,
-              volume: h.volume != null ? Number(h.volume) : undefined,
-            }));
-          }
-        } catch {
-          // Supabase 히스토리 없으면 건너뛰기
-        }
+        await loadFromSupabase(assetId, assetDataMap);
       }
+    }
+
+    // 3b. 한국 자산 (네이버 금융): Supabase 히스토리 사용 (네이버 실시간으로 축적됨)
+    for (const assetId of NAVER_ASSET_IDS) {
+      await loadFromSupabase(assetId, assetDataMap);
     }
 
     // 4. 각 자산에 대해 앙상블 예측 실행

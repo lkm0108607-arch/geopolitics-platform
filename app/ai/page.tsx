@@ -703,42 +703,52 @@ export default function AISystemPage() {
               <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
             </div>
           ) : sortedLogs.length === 0 ? (
-            <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-8 text-center">
-              <BookOpen className="w-8 h-8 text-slate-600 mx-auto mb-3" />
+            <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-6 text-center">
+              <BookOpen className="w-6 h-6 text-slate-600 mx-auto mb-2" />
               <p className="text-sm text-slate-500">아직 학습 기록이 없습니다</p>
-              <p className="text-xs text-slate-600 mt-1">첫 번째 학습 사이클이 완료되면 여기에 기록됩니다</p>
+              <p className="text-xs text-slate-600 mt-1">파이프라인이 실행되면 AI가 예측 결과를 평가하고 학습 기록을 남깁니다.</p>
             </div>
           ) : (
             <div className="space-y-3">
-              {sortedLogs.map((log) => (
+              {sortedLogs.map((log, idx) => (
                 <div
                   key={`${log.cycleId}-${log.timestamp}`}
-                  className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-4 hover:bg-slate-900 transition-colors"
+                  className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-5 hover:border-purple-500/30 transition-colors"
                 >
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono text-purple-400 bg-purple-500/10 rounded px-2 py-0.5">
-                        사이클 {log.cycleId}
-                      </span>
-                      <span className="text-[10px] text-slate-500">
-                        {new Date(log.timestamp).toLocaleString("ko-KR", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </span>
+                  {/* 헤더: 사이클 + 날짜 */}
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className="text-[10px] font-mono text-purple-300 bg-purple-500/15 rounded px-1.5 py-0.5">
+                      {log.cycleId}
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      {new Date(log.timestamp).toLocaleDateString("ko-KR", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </span>
+                    <span className="text-[10px] text-slate-600 ml-auto">#{sortedLogs.length - idx}</span>
+                  </div>
+
+                  {/* AI 회고 내용 */}
+                  <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/30">
+                    <div className="flex items-start gap-2">
+                      <Brain className="w-3.5 h-3.5 text-purple-400 mt-0.5 flex-shrink-0" />
+                      <div className="space-y-1.5 min-w-0">
+                        {log.reason && (
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {log.reason}
+                          </p>
+                        )}
+                        {log.adjustments && (
+                          <p className="text-[11px] text-slate-500 leading-relaxed">
+                            <span className="text-purple-400/70">가중치 변동:</span>{" "}
+                            {log.adjustments}
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
-                  <p className="text-xs text-slate-300 mb-1">
-                    <span className="text-slate-500">조정: </span>
-                    {log.adjustments}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    <span className="text-slate-500">사유: </span>
-                    {log.reason}
-                  </p>
                 </div>
               ))}
             </div>
@@ -861,7 +871,7 @@ export default function AISystemPage() {
               <ul className="space-y-2 text-xs text-slate-400">
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">*</span>
-                  <span>Yahoo Finance 실시간 시세 데이터 (22개 자산)</span>
+                  <span>네이버 금융(한국) + Yahoo Finance(글로벌) 실시간 시세 데이터</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">*</span>

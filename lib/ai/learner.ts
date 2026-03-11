@@ -83,6 +83,10 @@ export interface LearningResult {
   ensembleDiagnosis: EnsembleDiagnosis;
   rootCause: RootCauseAnalysis;
 
+  // 강화학습 점수
+  modelScores: ModelScore[];
+  totalScore: number;
+
   weightAdjustment: EnsembleConfig;
   lesson: string; // 종합 리포트 (한국어)
 }
@@ -97,9 +101,117 @@ export interface PredictionOutcome {
 
 // ─── 상수 ──────────────────────────────────────────────────────────────────────
 
-const WEIGHT_REWARD = 0.02;
-const WEIGHT_PENALTY = -0.02;
+const WEIGHT_REWARD_BASE = 0.02;
+const WEIGHT_PENALTY_BASE = -0.02;
 const MIN_WEIGHT = 0.05;
+
+// ─── 강화학습 점수 시스템 ──────────────────────────────────────────────────────
+
+/** 모델별 강화학습 점수 계산 */
+export interface ModelScore {
+  modelName: string;
+  score: number;        // 이번 라운드 획득 점수
+  reason: string;       // 점수 사유
+}
+
+/**
+ * 성공한 예측에 대해 점수를 부여하고, 실패에는 감점한다.
+ * 점수는 가중치 조정 강도에 직접 반영된다.
+ *
+ * 점수 체계:
+ * - 기본 적중: +10점
+ * - 고확신 적중 (confidence >= 70%): +5점 보너스
+ * - 어려운 시장에서 적중 (변동률 > 3%): +5점 보너스
+ * - 방향 정확 + 강도 정확 (변동성확대 적중): +8점 보너스
+ * - 소수파로서 맞춤 (다른 모델은 틀림): +10점 보너스
+ * - 연속 적중 보너스 (streakCount 기반): +3점 * streak
+ * - 기본 오답: -8점
+ * - 고확신 오답 (confidence >= 70%): -5점 추가 감점
+ * - 심각한 진단 이슈: -3점 * 이슈 수
+ */
+function calculateModelScore(
+  diag: ModelDiagnosis,
+  actual: Direction,
+  actualReturn: number,
+  isMinorityCorrect: boolean,
+): ModelScore {
+  let score = 0;
+  const reasons: string[] = [];
+
+  if (diag.wasCorrect) {
+    // ── 적중 보상 ──
+    score += 10;
+    reasons.push("적중 +10");
+
+    // 고확신 적중 보너스
+    if (diag.confidence >= 70) {
+      score += 5;
+      reasons.push(`고확신(${diag.confidence}%) 적중 +5`);
+    } else if (diag.confidence >= 55) {
+      score += 2;
+      reasons.push(`중확신 적중 +2`);
+    }
+
+    // 어려운 시장에서 적중 (변동률이 큰 시장)
+    if (Math.abs(actualReturn) > 3) {
+      score += 5;
+      reasons.push(`고변동(${actualReturn > 0 ? "+" : ""}${actualReturn.toFixed(1)}%) 시장 적중 +5`);
+    } else if (Math.abs(actualReturn) > 1.5) {
+      score += 2;
+      reasons.push(`변동 시장 적중 +2`);
+    }
+
+    // 변동성확대를 정확히 맞춤
+    if (actual === "변동성확대" && diag.predicted === "변동성확대") {
+      score += 8;
+      reasons.push("변동성확대 정확 예측 +8");
+    }
+
+    // 소수파 적중 보너스 (다른 모델들이 틀렸는데 이 모델만 맞음)
+    if (isMinorityCorrect) {
+      score += 10;
+      reasons.push("소수파 적중 보너스 +10");
+    }
+
+    // 보합 시장에서 보합 예측 (상대적으로 쉬움 → 낮은 보상)
+    if (actual === "보합" && diag.predicted === "보합" && Math.abs(actualReturn) < 0.3) {
+      score -= 3; // 너무 쉬운 적중은 보상 감소
+      reasons.push("보합↔보합(미미한 변동) -3");
+    }
+  } else {
+    // ── 오답 감점 ──
+    score -= 8;
+    reasons.push("오답 -8");
+
+    // 고확신 오답은 추가 감점 (과신 페널티)
+    if (diag.confidence >= 70) {
+      score -= 5;
+      reasons.push(`고확신(${diag.confidence}%) 오답 과신 패널티 -5`);
+    }
+
+    // 심각한 이슈가 있는 오답
+    const severeCount = diag.issues.filter((i) => i.severity === "심각").length;
+    if (severeCount > 0) {
+      score -= severeCount * 3;
+      reasons.push(`심각 이슈 ${severeCount}건 -${severeCount * 3}`);
+    }
+
+    // 반대 방향 오답 (상승↔하락)은 추가 감점
+    if (
+      (diag.predicted === "상승" && actual === "하락") ||
+      (diag.predicted === "하락" && actual === "상승")
+    ) {
+      score -= 3;
+      reasons.push("방향 완전 반대 -3");
+    }
+  }
+
+  return {
+    modelName: diag.modelName,
+    score,
+    reason: reasons.join(", "),
+  };
+}
 
 // ─── 모델별 심층 진단 ──────────────────────────────────────────────────────────
 
@@ -566,12 +678,13 @@ function analyzeRootCause(
   };
 }
 
-// ─── 가중치 조정 (개선된 버전) ─────────────────────────────────────────────────
+// ─── 가중치 조정 (강화학습 점수 기반) ─────────────────────────────────────────
 
 function adjustWeights(
   currentWeights: EnsembleConfig,
   diagnoses: ModelDiagnosis[],
   ensembleDiag: EnsembleDiagnosis,
+  modelScores: ModelScore[],
 ): EnsembleConfig {
   const adjusted: EnsembleConfig = { ...currentWeights };
 
@@ -583,30 +696,16 @@ function adjustWeights(
     "펀더멘털": "fundamentalWeight",
   };
 
-  for (const diag of diagnoses) {
-    const key = keyMap[diag.modelName];
+  // 점수 기반 가중치 조정: 점수를 가중치 변동으로 변환
+  // 점수 범위: 대략 -20 ~ +30 → 가중치 변동: -0.06 ~ +0.09
+  const SCORE_TO_WEIGHT = 0.003; // 점수 1점 = 가중치 0.3% 변동
+
+  for (const ms of modelScores) {
+    const key = keyMap[ms.modelName];
     if (!key) continue;
 
-    if (diag.wasCorrect) {
-      // 맞은 모델: 확신도에 비례한 보상
-      const bonus = WEIGHT_REWARD * (diag.confidence / 100 + 0.5);
-      adjusted[key] = Math.max(adjusted[key] + bonus, MIN_WEIGHT);
-    } else {
-      // 틀린 모델: 심각한 이슈가 있으면 더 큰 페널티
-      const severeCount = diag.issues.filter((i) => i.severity === "심각").length;
-      const penalty = WEIGHT_PENALTY * (1 + severeCount * 0.5);
-      adjusted[key] = Math.max(adjusted[key] + penalty, MIN_WEIGHT);
-    }
-  }
-
-  // 소수 정답 모델에 추가 보너스
-  if (ensembleDiag.correctMinorityModels.length > 0) {
-    for (const name of ensembleDiag.correctMinorityModels) {
-      const key = keyMap[name];
-      if (key) {
-        adjusted[key] = Math.max(adjusted[key] + WEIGHT_REWARD * 1.5, MIN_WEIGHT);
-      }
-    }
+    const delta = ms.score * SCORE_TO_WEIGHT;
+    adjusted[key] = Math.max(adjusted[key] + delta, MIN_WEIGHT);
   }
 
   return normalizeWeights(adjusted);
@@ -623,6 +722,8 @@ function generateDetailedLesson(
   rootCause: RootCauseAnalysis,
   wasCorrect: boolean,
   newWeights: EnsembleConfig,
+  scores: ModelScore[],
+  totalScore: number,
 ): string {
   const parts: string[] = [];
 
@@ -674,6 +775,13 @@ function generateDetailedLesson(
     for (const imp of allImprovements) parts.push(`→ ${imp}`);
   }
 
+  // 강화학습 점수
+  parts.push(`\n─── 강화학습 점수 (총 ${totalScore > 0 ? "+" : ""}${totalScore}점) ───`);
+  for (const ms of scores) {
+    const sign = ms.score > 0 ? "+" : "";
+    parts.push(`  ${ms.modelName}: ${sign}${ms.score}점 (${ms.reason})`);
+  }
+
   // 새 가중치
   parts.push(`\n─── 조정된 가중치 ───`);
   parts.push(`  모멘텀: ${(newWeights.momentumWeight * 100).toFixed(1)}%`);
@@ -723,15 +831,27 @@ export function learn(
     postData,
   );
 
-  // 4. 가중치 조정
-  const weightAdjustment = adjustWeights(currentWeights, modelDiagnoses, ensembleDiagnosis);
+  // 4. 강화학습 점수 계산
+  const minorityCorrectSet = new Set(ensembleDiagnosis.correctMinorityModels);
+  const modelScores: ModelScore[] = modelDiagnoses.map((diag) =>
+    calculateModelScore(
+      diag,
+      actualDirection,
+      actualReturnPercent,
+      minorityCorrectSet.has(diag.modelName),
+    ),
+  );
+  const totalScore = modelScores.reduce((sum, ms) => sum + ms.score, 0);
 
-  // 5. 놓친 요인 (기존 호환용)
+  // 5. 가중치 조정 (점수 기반)
+  const weightAdjustment = adjustWeights(currentWeights, modelDiagnoses, ensembleDiagnosis, modelScores);
+
+  // 6. 놓친 요인 (기존 호환용)
   const missedFactors = modelDiagnoses
     .filter((d) => !d.wasCorrect)
     .flatMap((d) => d.issues.map((i) => `[${d.modelName}] ${i.description}`));
 
-  // 6. 모델 성과 (기존 호환용)
+  // 7. 모델 성과 (기존 호환용)
   const modelPerformance = {
     momentum: modelDiagnoses[0].wasCorrect,
     meanReversion: modelDiagnoses[1].wasCorrect,
@@ -740,7 +860,7 @@ export function learn(
     fundamental: modelDiagnoses[4].wasCorrect,
   };
 
-  // 7. 종합 리포트
+  // 8. 종합 리포트
   const lesson = generateDetailedLesson(
     prediction,
     actualDirection,
@@ -750,6 +870,8 @@ export function learn(
     rootCause,
     wasCorrect,
     weightAdjustment,
+    modelScores,
+    totalScore,
   );
 
   return {
@@ -763,6 +885,8 @@ export function learn(
     modelDiagnoses,
     ensembleDiagnosis,
     rootCause,
+    modelScores,
+    totalScore,
     weightAdjustment,
     lesson,
   };
@@ -794,12 +918,27 @@ export function batchLearn(
   const severeCount = allIssues.filter((i) => i.severity === "심각").length;
   const warningCount = allIssues.filter((i) => i.severity === "주의").length;
 
+  // 모델별 누적 점수
+  const modelTotalScores: Record<string, number> = {};
+  for (const r of results) {
+    for (const ms of r.modelScores) {
+      modelTotalScores[ms.modelName] = (modelTotalScores[ms.modelName] || 0) + ms.score;
+    }
+  }
+  const batchTotalScore = Object.values(modelTotalScores).reduce((a, b) => a + b, 0);
+
   const allImprovements = [...new Set(results.flatMap((r) => r.modelDiagnoses.flatMap((d) => d.improvements)))];
 
   const summary = [
     `═══ 배치 학습 리포트 ═══`,
     `총 ${outcomes.length}건 학습 완료 | 정확도: ${accuracy}% (${correctCount}/${outcomes.length})`,
+    `총 강화학습 점수: ${batchTotalScore > 0 ? "+" : ""}${batchTotalScore}점`,
     `발견된 이슈: 심각 ${severeCount}건, 주의 ${warningCount}건`,
+    ``,
+    `모델별 누적 점수:`,
+    ...Object.entries(modelTotalScores)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, score]) => `  ${name}: ${score > 0 ? "+" : ""}${score}점`),
     ``,
     `조정된 가중치:`,
     `  모멘텀: ${(currentWeights.momentumWeight * 100).toFixed(1)}%`,

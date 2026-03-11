@@ -85,6 +85,35 @@ export async function GET(request: Request) {
     log.push(`예측 생성 오류: ${err instanceof Error ? err.message : String(err)}`);
   }
 
+  // ── 3단계: 월요일이면 주간 리포트 생성 + 주간 강화학습 ──
+  let weeklyResult = null;
+  const kstDay = new Date(
+    Date.now() + 9 * 60 * 60 * 1000 + new Date().getTimezoneOffset() * 60000,
+  ).getDay();
+
+  if (kstDay === 1) {
+    // 월요일
+    log.push("3단계: 주간 리포트 생성 (월요일)...");
+    try {
+      const weeklyRes = await fetch(`${baseUrl}/api/ai/weekly-report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+
+      if (weeklyRes.ok) {
+        weeklyResult = await weeklyRes.json();
+        log.push(
+          `주간 리포트 완료: 정확도 ${weeklyResult?.accuracy ?? 0}%, 매수 평균수익 ${weeklyResult?.avgReturn ?? 0}%`,
+        );
+      } else {
+        const errText = await weeklyRes.text().catch(() => "unknown");
+        log.push(`주간 리포트 실패 (HTTP ${weeklyRes.status}): ${errText.slice(0, 200)}`);
+      }
+    } catch (err) {
+      log.push(`주간 리포트 오류: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
   log.push(`파이프라인 완료 (${elapsed}초)`);
 
@@ -109,6 +138,11 @@ export async function GET(request: Request) {
             totalAssets: predictResult.totalAssets,
           }
         : { success: false },
+      weeklyReport: weeklyResult
+        ? { success: true, accuracy: weeklyResult.accuracy, avgReturn: weeklyResult.avgReturn }
+        : kstDay === 1
+          ? { success: false }
+          : { skipped: true, reason: "월요일에만 실행" },
     },
     log,
   });

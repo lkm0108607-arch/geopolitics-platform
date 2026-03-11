@@ -264,72 +264,60 @@ export default function HomePage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {sortedPredictions.map((pred) => {
-                const livePrice = prices.get(pred.assetId);
-                return (
-                  <PredictionCard
-                    key={pred.assetId}
-                    prediction={pred}
-                    livePrice={livePrice}
-                    showDetail={expandedCards.has(pred.assetId)}
-                    onToggleDetail={() => toggleCard(pred.assetId)}
-                  />
-                );
-              })}
-            </div>
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {sortedPredictions.slice(0, 8).map((pred) => {
+                  const livePrice = prices.get(pred.assetId);
+                  return (
+                    <PredictionCard
+                      key={pred.assetId}
+                      prediction={pred}
+                      livePrice={livePrice}
+                      showDetail={expandedCards.has(pred.assetId)}
+                      onToggleDetail={() => toggleCard(pred.assetId)}
+                    />
+                  );
+                })}
+              </div>
+              {sortedPredictions.length > 8 && (
+                <div className="text-center mt-3">
+                  <Link href="/predictions" className="text-xs text-purple-400 hover:text-purple-300 transition-colors">
+                    +{sortedPredictions.length - 8}개 더 보기 →
+                  </Link>
+                </div>
+              )}
+            </>
           )}
         </section>
 
         {/* ── Quick Navigation ── */}
         <section>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-3 gap-3">
             <Link
               href="/predictions"
-              className="group rounded-xl border border-slate-700/60 bg-slate-900/70 p-6 hover:border-purple-500/50 hover:bg-slate-900 transition-all"
+              className="group rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-3 hover:border-purple-500/50 hover:bg-slate-900 transition-all flex items-center gap-3"
             >
-              <Brain className="w-8 h-8 text-purple-400 mb-3" />
-              <h3 className="text-base font-semibold text-white group-hover:text-purple-300 transition-colors">
-                AI 예측 상세
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                모든 자산의 AI 예측 결과와 서브모델 분석을 확인하세요
-              </p>
-              <span className="inline-flex items-center gap-1 text-xs text-purple-400 mt-3">
-                자세히 보기 <ChevronRight className="w-3 h-3" />
-              </span>
+              <Brain className="w-5 h-5 text-purple-400 shrink-0" />
+              <span className="text-sm font-medium text-white group-hover:text-purple-300 transition-colors">AI 예측 상세</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-600 ml-auto shrink-0" />
             </Link>
 
             <Link
               href="/assets"
-              className="group rounded-xl border border-slate-700/60 bg-slate-900/70 p-6 hover:border-blue-500/50 hover:bg-slate-900 transition-all"
+              className="group rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-3 hover:border-blue-500/50 hover:bg-slate-900 transition-all flex items-center gap-3"
             >
-              <BarChart3 className="w-8 h-8 text-blue-400 mb-3" />
-              <h3 className="text-base font-semibold text-white group-hover:text-blue-300 transition-colors">
-                실시간 시세
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                주요 자산의 실시간 가격과 변동률을 한눈에 파악하세요
-              </p>
-              <span className="inline-flex items-center gap-1 text-xs text-blue-400 mt-3">
-                자세히 보기 <ChevronRight className="w-3 h-3" />
-              </span>
+              <BarChart3 className="w-5 h-5 text-blue-400 shrink-0" />
+              <span className="text-sm font-medium text-white group-hover:text-blue-300 transition-colors">실시간 시세</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-600 ml-auto shrink-0" />
             </Link>
 
             <Link
               href="/ai"
-              className="group rounded-xl border border-slate-700/60 bg-slate-900/70 p-6 hover:border-emerald-500/50 hover:bg-slate-900 transition-all"
+              className="group rounded-xl border border-slate-700/60 bg-slate-900/70 px-4 py-3 hover:border-emerald-500/50 hover:bg-slate-900 transition-all flex items-center gap-3"
             >
-              <Cpu className="w-8 h-8 text-emerald-400 mb-3" />
-              <h3 className="text-base font-semibold text-white group-hover:text-emerald-300 transition-colors">
-                AI 시스템
-              </h3>
-              <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-                AI 모델의 학습 이력, 가중치 변화, 정확도 추이를 분석하세요
-              </p>
-              <span className="inline-flex items-center gap-1 text-xs text-emerald-400 mt-3">
-                자세히 보기 <ChevronRight className="w-3 h-3" />
-              </span>
+              <Cpu className="w-5 h-5 text-emerald-400 shrink-0" />
+              <span className="text-sm font-medium text-white group-hover:text-emerald-300 transition-colors">AI 시스템</span>
+              <ChevronRight className="w-3.5 h-3.5 text-slate-600 ml-auto shrink-0" />
             </Link>
           </div>
         </section>

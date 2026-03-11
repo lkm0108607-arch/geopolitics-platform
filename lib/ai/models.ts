@@ -647,7 +647,9 @@ const CORRELATION_MATRIX: Record<string, number> = {
  * priceService의 자산 ID → 상관관계 매트릭스에서 사용하는 키
  */
 const ASSET_ID_TO_CORRELATION_KEY: Record<string, string> = {
+  // 글로벌 자산
   "kospi": "KOSPI",
+  "kosdaq": "KOSDAQ",
   "sp500": "SPX",
   "nasdaq": "NASDAQ",
   "gold": "GOLD",
@@ -655,16 +657,18 @@ const ASSET_ID_TO_CORRELATION_KEY: Record<string, string> = {
   "dxy": "DXY",
   "usd-krw": "USDKRW",
   "usd-jpy": "USDJPY",
-  "kodex-semiconductor": "SEMICONDUCTOR",
-  "tiger-secondary-battery": "EV_BATTERY",
-  "kodex-bio": "BIO",
-  "kodex-defense": "DEFENSE",
-  "tiger-ai-semi": "AI_TECH",
-  "kodex-gold": "KODEX_GOLD",
-  "tiger-us-snp500": "TIGER_SNP",
-  "tiger-us-nasdaq": "TIGER_NASDAQ",
-  "kodex-200": "KODEX200",
-  "tiger-shipbuilding": "SHIPBUILDING",
+  "us-10y-yield": "US10Y",
+  "copper": "COPPER",
+  // 한국 ETF (etf-{ticker} 형식 → 네이버 금융 기준)
+  "etf-091160": "SEMICONDUCTOR",     // KODEX 반도체
+  "etf-305720": "EV_BATTERY",        // KODEX 2차전지산업
+  "etf-244580": "BIO",               // KODEX 바이오
+  "etf-381180": "AI_TECH",           // TIGER 미국필라델피아반도체
+  "etf-132030": "KODEX_GOLD",        // KODEX 골드선물(H)
+  "etf-360750": "TIGER_SNP",         // TIGER 미국S&P500
+  "etf-133690": "TIGER_NASDAQ",      // TIGER 미국나스닥100
+  "etf-069500": "KODEX200",          // KODEX 200
+  "etf-305080": "KODEX_BOND",        // KODEX 미국채10년선물
 };
 
 export interface CrossAssetInput {
