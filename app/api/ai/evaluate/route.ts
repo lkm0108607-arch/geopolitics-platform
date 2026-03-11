@@ -3,7 +3,6 @@ import { learn } from "@/lib/ai/learner";
 import type { PredictionOutcome } from "@/lib/ai/learner";
 import type { Direction } from "@/lib/ai/models";
 import type { AIPrediction, SubModelVotes } from "@/lib/ai/ensemble";
-import type { PriceBar } from "@/lib/ai/indicators";
 import {
   getLatestPredictions,
   savePredictionResult,
@@ -11,19 +10,7 @@ import {
   saveModelWeights,
   saveLearningLog,
 } from "@/lib/ai/dataService";
-
-// ─── Yahoo Finance 심볼 매핑 ──────────────────────────────────────────────────
-
-const ASSET_TO_SYMBOL: Record<string, string> = {
-  kospi: "^KS11",
-  sp500: "^GSPC",
-  nasdaq: "^IXIC",
-  dxy: "DX-Y.NYB",
-  gold: "GC=F",
-  "wti-oil": "CL=F",
-  "usd-krw": "KRW=X",
-  "usd-jpy": "JPY=X",
-};
+import { ASSET_SYMBOLS } from "@/lib/realtime/priceService";
 
 // ─── Yahoo Finance 현재 가격 가져오기 ──────────────────────────────────────────
 
@@ -104,16 +91,21 @@ export async function POST(request: Request) {
     let currentWeights = await getModelWeights();
 
     // 3. Yahoo Finance에서 현재 시장 데이터 가져오기
+    // ASSET_SYMBOLS에서 전체 심볼 매핑 사용 (ETF 포함)
     const priceResults: Record<string, CurrentPriceData | null> = {};
 
-    const pricePromises = predictions.map(async (pred) => {
-      const symbol = ASSET_TO_SYMBOL[pred.asset_id];
-      if (!symbol) return;
-      const priceData = await fetchCurrentPrice(symbol);
-      priceResults[pred.asset_id] = priceData;
-    });
-
-    await Promise.allSettled(pricePromises);
+    // 배치로 가격 조회 (한번에 10개씩)
+    const batchSize = 10;
+    for (let i = 0; i < predictions.length; i += batchSize) {
+      const batch = predictions.slice(i, i + batchSize);
+      const pricePromises = batch.map(async (pred) => {
+        const symbol = ASSET_SYMBOLS[pred.asset_id];
+        if (!symbol) return;
+        const priceData = await fetchCurrentPrice(symbol);
+        priceResults[pred.asset_id] = priceData;
+      });
+      await Promise.allSettled(pricePromises);
+    }
 
     // 4. 각 예측에 대해 평가 수행
     const evaluationResults = [];
@@ -223,6 +215,7 @@ export async function POST(request: Request) {
       summary: {
         totalPredictions: predictions.length,
         evaluated: evaluated.length,
+        skipped: evaluationResults.filter((r) => r.status === "skipped").length,
         correct: correctCount,
         accuracy,
       },
