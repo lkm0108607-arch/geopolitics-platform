@@ -356,7 +356,12 @@ export default function SimulationPage() {
 
   // Get price for trading (real if available, fallback to static recommended price)
   function getTradePrice(ticker: string): number {
-    return prices[ticker]?.currentPrice || etfRecommendations.find((e) => e.ticker === ticker)?.currentPrice || 0;
+    // 실시간 가격 우선, 없으면 추천 ETF의 정적 가격 사용
+    const livePrice = prices[ticker]?.currentPrice;
+    if (livePrice && livePrice > 0) return livePrice;
+    const staticPrice = etfRecommendations.find((e) => e.ticker === ticker)?.currentPrice;
+    if (staticPrice && staticPrice > 0) return staticPrice;
+    return 0;
   }
 
   // Get ETF display name from any source
@@ -883,7 +888,9 @@ export default function SimulationPage() {
               </div>
               <div className="flex items-end gap-3">
                 <span className="text-3xl font-bold text-white">
-                  {formatCurrency(selectedPrice?.currentPrice || currentPrice, locale as any)}
+                  {(selectedPrice?.currentPrice || currentPrice) > 0
+                    ? formatCurrency(selectedPrice?.currentPrice || currentPrice, locale as any)
+                    : <span className="text-slate-500 text-lg">가격 로딩중...</span>}
                 </span>
                 {selectedPrice && (
                   <div className={`flex items-center gap-1 pb-1 ${(selectedPrice.change ?? 0) >= 0 ? "text-red-400" : "text-blue-400"}`}>

@@ -45,7 +45,7 @@ export function formatValueLocale(value: number, unit: string, locale: Locale): 
 
 // ─── Format large currency amounts (for simulation, portfolios) ─────────────
 export function formatCurrency(n: number | null | undefined, locale: Locale): string {
-  if (n == null || isNaN(n)) return "₩0";
+  if (n == null || isNaN(n) || n === 0) return "-";
   return currencyConfigs.ko.formatLarge(n);
 }
 
