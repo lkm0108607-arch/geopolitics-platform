@@ -69,22 +69,39 @@ interface SolutionItem {
 
 function computeSignal(pred: AIPrediction): InvestmentSignal {
   const { direction, probability, confidence, juryVerdict, debateResult } = pred;
-  let score = (probability / 100) * 0.4 + (confidence / 100) * 0.3;
-  if (juryVerdict) {
-    const b: Record<string, number> = { "신뢰": 0.3, "부분신뢰": 0.15, "의심": -0.1, "불신": -0.3 };
-    score += b[juryVerdict.finalVerdict] ?? 0;
-  }
-  if (debateResult) {
-    const b: Record<string, number> = { "만장일치": 0.2, "다수결": 0.1, "분열": -0.05, "교착": -0.15 };
-    score += b[debateResult.agreementLevel] ?? 0;
-  }
+
+  // 1차: 확률 기반 판단 (가장 중요)
+  // 2차: 신뢰도 보정
+  // 3차: 배심원/토론 보너스 (데이터가 있을 경우)
+
   if (direction === "상승") {
-    if (score >= 0.75) return "강력매수";
-    if (score >= 0.55) return "매수";
+    if (probability >= 70 && confidence >= 30) return "강력매수";
+    if (probability >= 70) return "매수";
+    if (probability >= 55 && confidence >= 25) return "매수";
+    if (probability >= 55) return "관망"; // 약한 상승 시그널 → 관망
   } else if (direction === "하락") {
-    if (score >= 0.75) return "강력매도";
-    if (score >= 0.55) return "매도";
+    if (probability >= 70 && confidence >= 30) return "강력매도";
+    if (probability >= 70) return "매도";
+    if (probability >= 55 && confidence >= 25) return "매도";
+    if (probability >= 55) return "관망";
   }
+
+  // 배심원/토론 데이터가 있으면 추가 판단
+  if (juryVerdict || debateResult) {
+    let bonus = 0;
+    if (juryVerdict) {
+      const b: Record<string, number> = { "신뢰": 15, "부분신뢰": 5, "의심": -5, "불신": -15 };
+      bonus += b[juryVerdict.finalVerdict] ?? 0;
+    }
+    if (debateResult) {
+      const b: Record<string, number> = { "만장일치": 10, "다수결": 5, "분열": -5, "교착": -10 };
+      bonus += b[debateResult.agreementLevel] ?? 0;
+    }
+    const adjusted = probability + bonus;
+    if (direction === "상승" && adjusted >= 60) return "매수";
+    if (direction === "하락" && adjusted >= 60) return "매도";
+  }
+
   return "관망";
 }
 
@@ -95,15 +112,21 @@ function addDaysStr(days: number): string {
 }
 
 function computeTimingScore(pred: AIPrediction): number {
-  let score = 50;
-  score += (pred.probability - 50) * 0.5;
-  score += (pred.confidence - 50) * 0.3;
+  // 확률 중심 점수: probability가 50이면 50점, 100이면 100점
+  let score = pred.probability;
+
+  // 신뢰도 보정 (미약하게)
+  if (pred.confidence >= 35) score += 5;
+  else if (pred.confidence >= 25) score += 0;
+  else score -= 5;
+
+  // 배심원/토론 보정 (있을 경우만)
   if (pred.juryVerdict) {
-    const b: Record<string, number> = { "신뢰": 15, "부분신뢰": 5, "의심": -10, "불신": -20 };
+    const b: Record<string, number> = { "신뢰": 10, "부분신뢰": 3, "의심": -5, "불신": -10 };
     score += b[pred.juryVerdict.finalVerdict] ?? 0;
   }
   if (pred.debateResult) {
-    const b: Record<string, number> = { "만장일치": 15, "다수결": 5, "분열": -5, "교착": -15 };
+    const b: Record<string, number> = { "만장일치": 10, "다수결": 3, "분열": -3, "교착": -10 };
     score += b[pred.debateResult.agreementLevel] ?? 0;
   }
   return Math.max(0, Math.min(100, Math.round(score)));
@@ -118,24 +141,14 @@ function getTimingVerdict(score: number): SolutionItem["timingVerdict"] {
 }
 
 function getRiskGrade(pred: AIPrediction): SolutionItem["riskGrade"] {
-  let risk = 50;
-  if (pred.confidence < 40) risk += 25;
-  else if (pred.confidence < 55) risk += 10;
-  else risk -= 10;
-  if (pred.juryVerdict) {
-    if (pred.juryVerdict.finalVerdict === "불신") risk += 30;
-    else if (pred.juryVerdict.finalVerdict === "의심") risk += 15;
-    else if (pred.juryVerdict.finalVerdict === "신뢰") risk -= 15;
-  }
-  if (pred.debateResult) {
-    if (pred.debateResult.agreementLevel === "교착") risk += 20;
-    else if (pred.debateResult.agreementLevel === "분열") risk += 10;
-    else if (pred.debateResult.agreementLevel === "만장일치") risk -= 10;
-  }
-  if (risk >= 75) return "위험";
-  if (risk >= 55) return "주의";
-  if (risk >= 35) return "보통";
-  return "안전";
+  // 확률이 높으면 안전, 낮으면 위험 (방향 확신이 있으면 리스크 낮음)
+  const prob = pred.probability;
+  const conf = pred.confidence;
+
+  if (prob >= 75 && conf >= 30) return "안전";
+  if (prob >= 65) return "보통";
+  if (prob >= 50) return "주의";
+  return "위험";
 }
 
 function getActionLabel(signal: InvestmentSignal, verdict: SolutionItem["timingVerdict"]): string {
@@ -146,18 +159,23 @@ function getActionLabel(signal: InvestmentSignal, verdict: SolutionItem["timingV
   return verdict === "대기" || verdict === "부적절" ? "진입 대기" : "관망 유지";
 }
 
-function getSummary(pred: AIPrediction, signal: InvestmentSignal): string {
+function getSummary(pred: AIPrediction, signal: InvestmentSignal, returnNum: number): string {
   const tp = pred.timingPrediction;
+  const probStr = Math.max(0, pred.probability - 50);
+  const estDays = Math.round(7 + probStr * 0.3);
   if (signal === "강력매수" || signal === "매수") {
-    if (tp) return `${tp.expectedPeakDays}일 내 +${Math.abs(tp.expectedReturnPercent).toFixed(1)}% 상승 전망. ${tp.holdingPeriodDays}일 보유 후 익절 권장.`;
-    return `상승 추세 예상. 분할 매수 후 목표 도달 시 익절 권장.`;
+    const days = tp?.expectedPeakDays ?? Math.round(estDays * 0.7);
+    const ret = tp ? Math.abs(tp.expectedReturnPercent) : Math.abs(returnNum);
+    return `${days}일 내 +${ret.toFixed(1)}% 상승 전망. 분할 매수 후 목표 도달 시 익절 권장.`;
   }
   if (signal === "강력매도" || signal === "매도") {
-    if (tp) return `${tp.expectedTroughDays}일 내 ${tp.expectedReturnPercent.toFixed(1)}% 하락 전망. 보유 시 매도 검토.`;
-    return `하락 추세 예상. 보유분 매도로 손실 방지 권장.`;
+    const days = tp?.expectedTroughDays ?? Math.round(estDays * 0.7);
+    const ret = tp ? Math.abs(tp.expectedReturnPercent) : Math.abs(returnNum);
+    return `${days}일 내 -${ret.toFixed(1)}% 하락 전망. 보유 시 매도 검토.`;
   }
-  if (tp) return `${tp.trendDurationDays}일 내 방향성 확인 예상. 추세 확인까지 관망.`;
-  return `방향성 불확실. 추가 시그널 확인까지 대기.`;
+  if (pred.direction === "상승") return `약한 상승 시그널 (+${Math.abs(returnNum).toFixed(1)}%). 추가 확인 후 진입 검토.`;
+  if (pred.direction === "하락") return `약한 하락 시그널 (-${Math.abs(returnNum).toFixed(1)}%). 관망 후 재평가.`;
+  return `보합 추세. ${estDays}일 내 방향성 확인 예상.`;
 }
 
 function buildSolution(pred: AIPrediction): SolutionItem {
@@ -168,14 +186,25 @@ function buildSolution(pred: AIPrediction): SolutionItem {
   const verdict = getTimingVerdict(tScore);
   const riskGrade = getRiskGrade(pred);
 
-  // 수익률
+  // 수익률 추정: 확률 기반 (probability 60% → 약 ±2%, 80% → 약 ±4%)
   let returnNum = 0;
   if (tp) {
     returnNum = tp.expectedReturnPercent;
   } else {
-    const base = pred.probability * 0.05 * (pred.confidence / 100);
-    returnNum = pred.direction === "하락" ? -base : base;
+    const base = Math.max(0, (pred.probability - 50) * 0.15);
+    returnNum = pred.direction === "하락" ? -base : pred.direction === "상승" ? base : 0;
   }
+
+  // timingPrediction이 없을 때 확률 기반 추정치 생성
+  const isUp = pred.direction === "상승";
+  const isDown = pred.direction === "하락";
+  const probStrength = Math.max(0, pred.probability - 50); // 0~50
+  const estTrendDays = !tp ? Math.round(7 + probStrength * 0.3) : null; // 7~22일
+  const estPeakDays = !tp && isUp ? Math.round(estTrendDays! * 0.7) : !tp && isDown ? Math.round(estTrendDays! * 0.3) : null;
+  const estTroughDays = !tp && isDown ? Math.round(estTrendDays! * 0.7) : !tp && isUp ? Math.round(estTrendDays! * 0.3) : null;
+  const estHoldingDays = !tp && (signal !== "관망") ? Math.round(estTrendDays! * 0.8) : null;
+  const estStopLoss = !tp ? Math.round(Math.max(1.5, Math.abs(returnNum) * 0.7) * 10) / 10 : null;
+  const estRiskReward = !tp && estStopLoss ? Math.round((Math.abs(returnNum) / estStopLoss) * 100) / 100 : null;
 
   const targetReturn = returnNum > 0
     ? `+${returnNum.toFixed(1)}% 상승 예상`
@@ -207,19 +236,19 @@ function buildSolution(pred: AIPrediction): SolutionItem {
     targetReturn,
     targetReturnNum: returnNum,
     riskGrade,
-    peakDate: tp ? addDaysStr(tp.expectedPeakDays) : null,
-    troughDate: tp ? addDaysStr(tp.expectedTroughDays) : null,
-    peakDays: tp?.expectedPeakDays ?? null,
-    troughDays: tp?.expectedTroughDays ?? null,
-    holdingDays: tp?.holdingPeriodDays ?? null,
-    trendDays: tp?.trendDurationDays ?? null,
+    peakDate: tp ? addDaysStr(tp.expectedPeakDays) : estPeakDays ? addDaysStr(estPeakDays) : null,
+    troughDate: tp ? addDaysStr(tp.expectedTroughDays) : estTroughDays ? addDaysStr(estTroughDays) : null,
+    peakDays: tp?.expectedPeakDays ?? estPeakDays,
+    troughDays: tp?.expectedTroughDays ?? estTroughDays,
+    holdingDays: tp?.holdingPeriodDays ?? estHoldingDays,
+    trendDays: tp?.trendDurationDays ?? estTrendDays,
     entryStrategy,
     exitStrategy,
-    stopLoss: tp?.stopLossPercent ?? null,
-    riskReward: tp?.riskReward ?? null,
+    stopLoss: tp?.stopLossPercent ?? estStopLoss,
+    riskReward: tp?.riskReward ?? estRiskReward,
     timingVerdict: verdict,
     timingScore: tScore,
-    summary: getSummary(pred, signal),
+    summary: getSummary(pred, signal, returnNum),
   };
 }
 
