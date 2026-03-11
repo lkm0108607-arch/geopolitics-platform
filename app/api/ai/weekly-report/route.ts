@@ -249,7 +249,7 @@ function simulateTrade(
     return { entryPrice: 0, exitPrice: 0, exitReason: "미체결", exitDay: 0, actualReturn: 0 };
   }
 
-  // 진입가 = 추천 시점의 종가 (day 0) — 즉시 진입
+  // 진입가 = 추천 시점의 종가 (day 0)
   const targetEntry = snapshots[0].close;
   if (targetEntry <= 0) {
     return { entryPrice: 0, exitPrice: 0, exitReason: "미체결", exitDay: 0, actualReturn: 0 };
@@ -258,9 +258,23 @@ function simulateTrade(
   const tpPrice = targetEntry * (1 + Math.abs(pick.predictedReturn) / 100);
   const slPrice = targetEntry * (1 - pick.stopLossPercent / 100);
 
-  // 즉시 진입 (AI 추천 포트폴리오 매수진입가와 일치)
-  // day 0 종가에 매수 체결, day 1부터 TP/SL 체크
+  // 1단계: 진입 대기 — 현재가가 매수진입가에 도달해야 매수 체결
+  // (day 0은 추천일이므로 day 1부터 체결 탐색)
+  let entryDay = -1;
   for (let i = 1; i < snapshots.length && i <= pick.holdingDays; i++) {
+    if (snapshots[i].low <= targetEntry) {
+      entryDay = i;
+      break;
+    }
+  }
+
+  // 진입가 미도달 → 미체결
+  if (entryDay < 0) {
+    return { entryPrice: targetEntry, exitPrice: 0, exitReason: "미체결", exitDay: 0, actualReturn: 0 };
+  }
+
+  // 2단계: 진입 후 TP/SL 체크 — 익절가/손절가에 현재가 도달 시 매도
+  for (let i = entryDay + 1; i < snapshots.length && i <= pick.holdingDays; i++) {
     const day = snapshots[i];
 
     // SL 먼저 체크 (보수적: 같은 날 둘 다 터지면 SL 우선)

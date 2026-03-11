@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import {
   TrendingUp,
@@ -345,6 +345,27 @@ export default function InvestmentPage() {
     return top.map((s) => ({ ...s, weight: total > 0 ? Math.round((s.timingScore / total) * 100) : 20 }));
   }, [buyItems]);
 
+  // ── 매수진입가 고정: 사이클당 최초 가격을 잠금 ──
+  const entryPricesRef = useRef<Map<string, number>>(new Map());
+  const lockedCycleRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // 새 사이클이면 진입가 맵 초기화
+    if (cycleId && cycleId !== lockedCycleRef.current) {
+      entryPricesRef.current = new Map();
+      lockedCycleRef.current = cycleId;
+    }
+    // 포트폴리오 종목 중 아직 잠기지 않은 항목에 현재 라이브 가격 잠금
+    for (const s of portfolio) {
+      if (!entryPricesRef.current.has(s.assetId)) {
+        const lp = prices.get(s.assetId);
+        if (lp?.price && lp.price > 0) {
+          entryPricesRef.current.set(s.assetId, lp.price);
+        }
+      }
+    }
+  }, [cycleId, portfolio, prices]);
+
   // 예측 시각 표시
   const lastPredictionTime = predictions.length > 0
     ? new Date(predictions[0].generatedAt).toLocaleString("ko-KR", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })
@@ -474,10 +495,13 @@ export default function InvestmentPage() {
                   <tbody>
                     {portfolio.map((s) => {
                       const lp = prices.get(s.assetId);
-                      const price = lp?.price && lp.price > 0 ? lp.price : null;
-                      const change = price ? lp?.changePercent : null;
-                      const tpPrice = price ? Math.round(price * (1 + Math.abs(s.targetReturnNum) / 100)) : null;
-                      const slPrice = price && s.stopLoss != null ? Math.round(price * (1 - s.stopLoss / 100)) : null;
+                      const livePrice = lp?.price && lp.price > 0 ? lp.price : null;
+                      const change = livePrice ? lp?.changePercent : null;
+                      // 매수진입가: 사이클 최초 잠금 가격 (변하지 않음)
+                      const entryPrice = entryPricesRef.current.get(s.assetId) ?? null;
+                      // 익절/손절가는 고정된 매수진입가 기준
+                      const tpPrice = entryPrice ? Math.round(entryPrice * (1 + Math.abs(s.targetReturnNum) / 100)) : null;
+                      const slPrice = entryPrice && s.stopLoss != null ? Math.round(entryPrice * (1 - s.stopLoss / 100)) : null;
                       return (
                       <tr key={s.assetId} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
                         <td className="px-5 py-3">
@@ -485,9 +509,9 @@ export default function InvestmentPage() {
                           <span className="text-[10px] text-slate-500 ml-2">{s.category}</span>
                         </td>
                         <td className="px-3 py-3 text-right">
-                          {price ? (
+                          {livePrice ? (
                             <div>
-                              <span className="text-sm font-mono text-emerald-300">{price.toLocaleString("ko-KR")}</span>
+                              <span className="text-sm font-mono text-emerald-300">{livePrice.toLocaleString("ko-KR")}</span>
                               {change != null && (
                                 <p className={`text-[10px] font-mono ${change > 0 ? "text-red-400" : change < 0 ? "text-blue-400" : "text-slate-500"}`}>
                                   {change > 0 ? "+" : ""}{change.toFixed(2)}%
@@ -497,9 +521,9 @@ export default function InvestmentPage() {
                           ) : <span className="text-[10px] text-slate-600 animate-pulse">실시간</span>}
                         </td>
                         <td className="px-3 py-3 text-right">
-                          {price ? (
-                            <span className="text-sm font-mono text-white">{price.toLocaleString("ko-KR")}</span>
-                          ) : <span className="text-[10px] text-slate-600">로딩중</span>}
+                          {entryPrice ? (
+                            <span className="text-sm font-mono text-white">{entryPrice.toLocaleString("ko-KR")}</span>
+                          ) : <span className="text-[10px] text-slate-600">잠금 대기</span>}
                         </td>
                         <td className="px-3 py-3 text-center hidden sm:table-cell">
                           {tpPrice ? (
@@ -608,7 +632,8 @@ export default function InvestmentPage() {
           <section className="space-y-3">
             {displayed.map((item) => {
               const lp = prices.get(item.assetId);
-              return <SolutionCard key={item.assetId} item={item} livePrice={lp?.price && lp.price > 0 ? lp.price : undefined} liveChange={lp?.price && lp.price > 0 ? lp.changePercent : undefined} />;
+              const lockedEntry = entryPricesRef.current.get(item.assetId);
+              return <SolutionCard key={item.assetId} item={item} livePrice={lp?.price && lp.price > 0 ? lp.price : undefined} liveChange={lp?.price && lp.price > 0 ? lp.changePercent : undefined} entryPrice={lockedEntry} />;
             })}
           </section>
         )}
@@ -699,7 +724,7 @@ function TabBtn({ active, onClick, children }: { active: boolean; onClick: () =>
   );
 }
 
-function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; livePrice?: number; liveChange?: number }) {
+function SolutionCard({ item, livePrice, liveChange, entryPrice: lockedEntryPrice }: { item: SolutionItem; livePrice?: number; liveChange?: number; entryPrice?: number }) {
   const [open, setOpen] = useState(false);
   const cfg = signalConfig[item.signal];
   const Icon = cfg.icon;
@@ -708,9 +733,10 @@ function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; liv
   const isBuy = item.signal === "강력매수" || item.signal === "매수";
   const isSell = item.signal === "강력매도" || item.signal === "매도";
   const currentPrice = livePrice ?? 0;
-  const takeProfitPrice = currentPrice > 0 ? Math.round(currentPrice * (1 + Math.abs(item.targetReturnNum) / 100)) : null;
-  const stopLossPrice = currentPrice > 0 && item.stopLoss != null ? Math.round(currentPrice * (1 - item.stopLoss / 100)) : null;
-  const entryPrice = currentPrice > 0 ? currentPrice : null;
+  // 매수진입가: 고정 잠금가 (없으면 현재가 fallback)
+  const entryPrice = lockedEntryPrice ?? (currentPrice > 0 ? currentPrice : null);
+  const takeProfitPrice = entryPrice ? Math.round(entryPrice * (1 + Math.abs(item.targetReturnNum) / 100)) : null;
+  const stopLossPrice = entryPrice && item.stopLoss != null ? Math.round(entryPrice * (1 - item.stopLoss / 100)) : null;
 
   const fmtPrice = (p: number | null) => p != null && p > 0 ? p.toLocaleString("ko-KR") : "-";
 
@@ -780,22 +806,34 @@ function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; liv
         <div className="border-t border-slate-700/50 p-4 space-y-4 bg-slate-950/40">
 
           {/* ── 핵심 매매 가격 정보 ── */}
-          {currentPrice > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {/* 현재가 / 진입가 */}
-              <div className="rounded-lg bg-slate-800/80 border border-slate-600/40 p-3 text-center">
+          {(currentPrice > 0 || entryPrice) && (
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              {/* 실시간 현재가 */}
+              <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/30 p-3 text-center">
                 <div className="flex items-center justify-center gap-1 mb-1.5 text-emerald-400">
+                  <TrendingUp className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-medium">현재가</span>
+                </div>
+                <p className="text-base font-bold font-mono text-emerald-300">{currentPrice > 0 ? fmtPrice(currentPrice) : "-"}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  {liveChange != null && (
+                    <span className={`${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : ""}`}>
+                      {liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%
+                    </span>
+                  )}
+                  {!liveChange && "실시간"}
+                </p>
+              </div>
+
+              {/* 매수 진입가 (고정) */}
+              <div className="rounded-lg bg-slate-800/80 border border-slate-600/40 p-3 text-center">
+                <div className="flex items-center justify-center gap-1 mb-1.5 text-amber-400">
                   <Crosshair className="w-3.5 h-3.5" />
-                  <span className="text-[10px] font-medium">{isBuy ? "매수 진입가" : isSell ? "매도 기준가" : "현재가"}</span>
+                  <span className="text-[10px] font-medium">{isBuy ? "매수 진입가" : isSell ? "매도 기준가" : "기준가"}</span>
                 </div>
                 <p className="text-base font-bold font-mono text-white">{fmtPrice(entryPrice)}</p>
                 <p className="text-[10px] text-slate-500 mt-0.5">
-                  {item.unit === "%" ? "%" : "원"}
-                  {liveChange != null && (
-                    <span className={`ml-1 ${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : ""}`}>
-                      ({liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%)
-                    </span>
-                  )}
+                  사이클 고정
                 </p>
               </div>
 
