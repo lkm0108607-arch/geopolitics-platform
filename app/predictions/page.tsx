@@ -89,9 +89,14 @@ export default function PredictionsPage() {
 
   // Filter + sort predictions
   const filteredPredictions = useMemo(() => {
-    let filtered = predictions;
+    // 미등록 자산 제외 (assets.ts 또는 koreanETFs에 없는 ID)
+    let filtered = predictions.filter((p) => {
+      if (p.assetId.startsWith("etf-")) return true; // ETF는 항상 포함
+      const asset = getAssetById(p.assetId);
+      return asset && asset.name !== p.assetId;
+    });
     if (activeTab !== "전체") {
-      filtered = predictions.filter(
+      filtered = filtered.filter(
         (p) => getCategoryForPrediction(p) === activeTab
       );
     }
@@ -120,14 +125,19 @@ export default function PredictionsPage() {
     });
   }, [predictions, activeTab, sortBy, prices]);
 
-  // Stats
-  const bullCount = predictions.filter((p) => p.direction === "상승").length;
-  const bearCount = predictions.filter((p) => p.direction === "하락").length;
+  // Stats (미등록 자산 제외)
+  const validPredictions = predictions.filter((p) => {
+    if (p.assetId.startsWith("etf-")) return true;
+    const asset = getAssetById(p.assetId);
+    return asset && asset.name !== p.assetId;
+  });
+  const bullCount = validPredictions.filter((p) => p.direction === "상승").length;
+  const bearCount = validPredictions.filter((p) => p.direction === "하락").length;
   const avgConfidence =
-    predictions.length > 0
+    validPredictions.length > 0
       ? Math.round(
-          predictions.reduce((sum, p) => sum + p.confidence, 0) /
-            predictions.length
+          validPredictions.reduce((sum, p) => sum + p.confidence, 0) /
+            validPredictions.length
         )
       : 0;
   const accuracyRate = accuracy?.accuracy ?? null;
