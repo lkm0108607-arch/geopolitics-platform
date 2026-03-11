@@ -54,6 +54,19 @@ function buildAssetSymbols(): Record<string, string> {
     symbols[`etf-${etf.ticker}`] = `naver:${etf.ticker}`;
   }
 
+  // 산업 자산 → 대표 ETF 티커로 매핑 (프록시)
+  const industryProxy: Record<string, string> = {
+    "semiconductor": "091160",  // KODEX 반도체
+    "ai-tech": "133690",        // TIGER 미국나스닥100
+    "ev-battery": "305720",     // KODEX 2차전지산업
+    "bio-pharma": "244580",     // KODEX 바이오
+    "defense": "409820",        // KODEX 미국나스닥100레버리지
+    "shipbuilding": "139220",   // TIGER 200 건설
+  };
+  for (const [assetId, ticker] of Object.entries(industryProxy)) {
+    symbols[assetId] = `naver:${ticker}`;
+  }
+
   return symbols;
 }
 

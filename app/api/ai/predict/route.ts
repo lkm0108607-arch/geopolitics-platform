@@ -35,10 +35,23 @@ const NAVER_ASSET_IDS = [
   ...koreanETFs.map((etf) => `etf-${etf.ticker}`),
 ];
 
+// 산업 자산 → 대표 ETF 매핑 (대표 ETF 데이터를 프록시로 사용)
+const INDUSTRY_PROXY_MAP: Record<string, string> = {
+  "semiconductor": "etf-091160",   // KODEX 반도체
+  "ai-tech": "etf-133690",         // TIGER 미국나스닥100
+  "ev-battery": "etf-305720",      // KODEX 2차전지산업
+  "bio-pharma": "etf-244580",      // KODEX 바이오
+  "defense": "etf-409820",         // KODEX 미국나스닥100레버리지
+  "shipbuilding": "etf-139220",    // TIGER 200 건설 (조선ETF 미제공, 근접 대체)
+};
+
+const INDUSTRY_ASSET_IDS = Object.keys(INDUSTRY_PROXY_MAP);
+
 // 전체 예측 대상 자산 ID 목록
 const ALL_ASSET_IDS = [
   ...Object.values(YAHOO_GLOBAL_SYMBOLS),
   ...NAVER_ASSET_IDS,
+  ...INDUSTRY_ASSET_IDS,
 ];
 
 const SYMBOL_TO_ASSET: Record<string, string> = { ...YAHOO_GLOBAL_SYMBOLS };
@@ -236,6 +249,16 @@ export async function POST() {
     // 3b. 한국 자산 (네이버 금융): Supabase 히스토리 사용 (네이버 실시간으로 축적됨)
     for (const assetId of NAVER_ASSET_IDS) {
       await loadFromSupabase(assetId, assetDataMap);
+    }
+
+    // 3c. 산업 자산: 대표 ETF 데이터를 프록시로 사용
+    for (const [industryId, proxyEtfId] of Object.entries(INDUSTRY_PROXY_MAP)) {
+      if (assetDataMap[proxyEtfId] && assetDataMap[proxyEtfId].length >= 20) {
+        assetDataMap[industryId] = assetDataMap[proxyEtfId];
+      } else {
+        // 프록시 ETF 데이터도 없으면 Supabase에서 직접 시도
+        await loadFromSupabase(industryId, assetDataMap);
+      }
     }
 
     // 4. 각 자산에 대해 앙상블 예측 실행
