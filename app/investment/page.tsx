@@ -1293,9 +1293,13 @@ function WeeklyKPI({ label, value, sub, color }: {
   );
 }
 
-function PortfolioTradeRow({ result, livePrice, liveChange }: { result: PortfolioResult; livePrice?: number | null; liveChange?: number | null }) {
+function PortfolioTradeRow({ result, livePrice }: { result: PortfolioResult; livePrice?: number | null }) {
   const exitStyle = exitReasonStyle[result.exitReason] ?? exitReasonStyle["기간종료"];
   const fmtPrice = (p: number | null) => p ? p.toLocaleString("ko-KR") : "-";
+  // 매수진입가 대비 현재가 수익률
+  const retVsEntry = livePrice && result.entryPrice && result.entryPrice > 0
+    ? Math.round(((livePrice - result.entryPrice) / result.entryPrice) * 10000) / 100
+    : null;
 
   return (
     <div className="rounded-lg bg-slate-900/60 border border-slate-800/60 p-3 hover:bg-slate-800/40 transition">
@@ -1318,9 +1322,9 @@ function PortfolioTradeRow({ result, livePrice, liveChange }: { result: Portfoli
           {livePrice ? (
             <span className="text-[11px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
               현재 {livePrice.toLocaleString("ko-KR")}
-              {liveChange != null && (
-                <span className={`ml-1 ${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : "text-slate-500"}`}>
-                  {liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%
+              {retVsEntry != null && retVsEntry !== 0 && (
+                <span className={`ml-1 ${retVsEntry > 0 ? "text-red-400" : retVsEntry < 0 ? "text-blue-400" : "text-slate-500"}`}>
+                  {retVsEntry > 0 ? "+" : ""}{retVsEntry.toFixed(2)}%
                 </span>
               )}
             </span>
@@ -1338,6 +1342,7 @@ function PortfolioTradeRow({ result, livePrice, liveChange }: { result: Portfoli
       {/* 하단: 매매가 정보 */}
       <div className="flex items-center gap-4 text-[10px] text-slate-500">
         <span>매수가 <span className="text-slate-400 font-mono">{fmtPrice(result.entryPrice)}</span></span>
+        <span>현재가 <span className="text-emerald-400 font-mono">{livePrice ? livePrice.toLocaleString("ko-KR") : "-"}</span></span>
         <span>매도가 <span className="text-slate-400 font-mono">{fmtPrice(result.exitPrice)}</span></span>
         <span className="hidden sm:inline">익절 목표가 <span className="text-red-400/70 font-mono">{fmtPrice(result.tpTarget)}</span></span>
         <span className="hidden sm:inline">손절가 <span className="text-blue-400/70 font-mono">{fmtPrice(result.slTarget)}</span></span>
@@ -1365,9 +1370,9 @@ function LiveTradeRow({ name, signal, weight, livePrice, liveChange, entryPrice,
 
   const statusIcon = status === "보유중" ? "📈" : status === "익절" ? "💰" : status === "손절" ? "🛑" : "⏳";
 
-  // 수익률 계산 (보유중일 때만)
-  const unrealizedReturn = isBought && !isSold && livePrice && entryPrice
-    ? Math.round(((livePrice - entryPrice) / entryPrice) * 100 * 100) / 100
+  // 수익률: 매수진입가 대비 현재가 (진입가=현재가면 0% → 미표시)
+  const returnVsEntry = livePrice && entryPrice && entryPrice > 0
+    ? Math.round(((livePrice - entryPrice) / entryPrice) * 10000) / 100
     : null;
 
   return (
@@ -1389,17 +1394,17 @@ function LiveTradeRow({ name, signal, weight, livePrice, liveChange, entryPrice,
           {livePrice ? (
             <span className="text-[11px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
               현재 {livePrice.toLocaleString("ko-KR")}
-              {liveChange != null && (
-                <span className={`ml-1 ${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : "text-slate-500"}`}>
-                  {liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%
+              {returnVsEntry != null && returnVsEntry !== 0 && (
+                <span className={`ml-1 ${returnVsEntry > 0 ? "text-red-400" : returnVsEntry < 0 ? "text-blue-400" : "text-slate-500"}`}>
+                  {returnVsEntry > 0 ? "+" : ""}{returnVsEntry.toFixed(2)}%
                 </span>
               )}
             </span>
           ) : <span className="text-[10px] text-slate-600 animate-pulse">시세 로딩</span>}
           <span className={`text-[10px] px-2 py-0.5 rounded-full border font-bold ${statusStyle}`}>{status}</span>
-          {unrealizedReturn != null && (
-            <span className={`text-sm font-mono font-bold ${unrealizedReturn > 0 ? "text-red-400" : unrealizedReturn < 0 ? "text-blue-400" : "text-slate-400"}`}>
-              {unrealizedReturn > 0 ? "+" : ""}{unrealizedReturn}%
+          {returnVsEntry != null && returnVsEntry !== 0 && (
+            <span className={`text-sm font-mono font-bold ${returnVsEntry > 0 ? "text-red-400" : returnVsEntry < 0 ? "text-blue-400" : "text-slate-400"}`}>
+              {returnVsEntry > 0 ? "+" : ""}{returnVsEntry.toFixed(2)}%
             </span>
           )}
         </div>
@@ -1407,6 +1412,7 @@ function LiveTradeRow({ name, signal, weight, livePrice, liveChange, entryPrice,
       {/* 하단: 매매 정보 */}
       <div className="flex items-center gap-4 text-[10px] text-slate-500">
         <span>매수진입가 <span className="text-white font-mono">{fmtPrice(entryPrice)}</span></span>
+        {livePrice && <span>현재가 <span className="text-emerald-400 font-mono">{fmtPrice(livePrice)}</span></span>}
         {isBought && <span>매수가 <span className="text-slate-400 font-mono">{fmtPrice(buyPrice)}</span></span>}
         {isSold && <span>매도가 <span className="text-slate-400 font-mono">{fmtPrice(sellPrice)}</span></span>}
         <span className={isBought ? "" : "hidden sm:inline"}>익절 목표가 <span className={`font-mono ${isBought ? "text-red-400" : "text-red-400/60"}`}>{fmtPrice(tpPrice)}</span></span>
