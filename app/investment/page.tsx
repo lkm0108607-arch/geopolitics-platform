@@ -934,7 +934,7 @@ function TimingBox({ label, value, sub, color, icon }: {
   );
 }
 
-// ── 주간 AI 자동매매 성적표 ──────────────────────────────────────────────────────
+// ── 주간 AI 성적표 ──────────────────────────────────────────────────────
 
 const exitReasonStyle: Record<string, { bg: string; text: string; icon: string }> = {
   "익절": { bg: "bg-emerald-500/15", text: "text-emerald-400", icon: "💰" },
@@ -967,7 +967,7 @@ function WeeklyReportSection({
       <section className="rounded-xl border border-slate-800 bg-slate-900/50 p-5">
         <div className="flex items-center gap-2 mb-2">
           <CalendarDays className="w-5 h-5 text-amber-400" />
-          <h2 className="text-base font-bold">주간 AI 자동매매 성적표</h2>
+          <h2 className="text-base font-bold">주간 AI 성적표</h2>
         </div>
         <p className="text-xs text-slate-500">
           매주 월요일에 지난주 AI 추천 포트폴리오의 자동매매 시뮬레이션 성적이 생성됩니다. 각 종목별 익절/손절 결과를 확인할 수 있습니다.
@@ -988,7 +988,7 @@ function WeeklyReportSection({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <CalendarDays className="w-5 h-5 text-amber-400" />
-              <h2 className="text-base font-bold text-white">주간 자동매매 성적표</h2>
+              <h2 className="text-base font-bold text-white">주간 AI 성적표</h2>
               <span className="text-[11px] text-slate-500 bg-slate-800 px-2 py-0.5 rounded">
                 {weekStartStr} ~ {weekEndStr}
               </span>
