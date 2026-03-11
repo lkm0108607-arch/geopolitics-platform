@@ -461,6 +461,7 @@ export default function InvestmentPage() {
                   <thead>
                     <tr className="text-slate-500 text-xs border-b border-slate-800">
                       <th className="text-left px-5 py-3 font-medium">종목</th>
+                      <th className="text-right px-3 py-3 font-medium">현재가</th>
                       <th className="text-right px-3 py-3 font-medium">매수진입가</th>
                       <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">익절 목표가</th>
                       <th className="text-center px-3 py-3 font-medium hidden md:table-cell">손절가</th>
@@ -486,13 +487,18 @@ export default function InvestmentPage() {
                         <td className="px-3 py-3 text-right">
                           {price ? (
                             <div>
-                              <span className="text-sm font-mono text-white">{price.toLocaleString("ko-KR")}</span>
+                              <span className="text-sm font-mono text-emerald-300">{price.toLocaleString("ko-KR")}</span>
                               {change != null && (
                                 <p className={`text-[10px] font-mono ${change > 0 ? "text-red-400" : change < 0 ? "text-blue-400" : "text-slate-500"}`}>
                                   {change > 0 ? "+" : ""}{change.toFixed(2)}%
                                 </p>
                               )}
                             </div>
+                          ) : <span className="text-[10px] text-slate-600 animate-pulse">실시간</span>}
+                        </td>
+                        <td className="px-3 py-3 text-right">
+                          {price ? (
+                            <span className="text-sm font-mono text-white">{price.toLocaleString("ko-KR")}</span>
                           ) : <span className="text-[10px] text-slate-600">로딩중</span>}
                         </td>
                         <td className="px-3 py-3 text-center hidden sm:table-cell">
@@ -560,6 +566,7 @@ export default function InvestmentPage() {
           isLoading={weeklyLoading}
           showDetail={showWeeklyDetail}
           onToggleDetail={() => setShowWeeklyDetail((v) => !v)}
+          prices={prices}
         />
 
         {/* ── 정렬 + 탭 ────────────────────────────── */}
@@ -954,11 +961,13 @@ function WeeklyReportSection({
   isLoading,
   showDetail,
   onToggleDetail,
+  prices,
 }: {
   reports: WeeklyReportData[];
   isLoading: boolean;
   showDetail: boolean;
   onToggleDetail: () => void;
+  prices: Map<string, import("@/lib/realtime/priceService").LivePrice>;
 }) {
   if (isLoading) {
     return (
@@ -1043,9 +1052,12 @@ function WeeklyReportSection({
                   종목별 자동매매 결과 ({latest.portfolio.length}종목)
                 </h3>
                 <div className="space-y-2">
-                  {[...latest.portfolio].sort((a, b) => b.actualReturn - a.actualReturn).map((r) => (
-                    <PortfolioTradeRow key={r.assetId} result={r} />
-                  ))}
+                  {[...latest.portfolio].sort((a, b) => b.actualReturn - a.actualReturn).map((r) => {
+                    const lp = prices.get(r.assetId);
+                    const livePrice = lp?.price && lp.price > 0 ? lp.price : null;
+                    const liveChange = lp?.price && lp.price > 0 ? lp.changePercent : null;
+                    return <PortfolioTradeRow key={r.assetId} result={r} livePrice={livePrice} liveChange={liveChange} />;
+                  })}
                 </div>
               </div>
             )}
@@ -1103,13 +1115,13 @@ function WeeklyKPI({ label, value, sub, color }: {
   );
 }
 
-function PortfolioTradeRow({ result }: { result: PortfolioResult }) {
+function PortfolioTradeRow({ result, livePrice, liveChange }: { result: PortfolioResult; livePrice?: number | null; liveChange?: number | null }) {
   const exitStyle = exitReasonStyle[result.exitReason] ?? exitReasonStyle["기간종료"];
   const fmtPrice = (p: number | null) => p ? p.toLocaleString("ko-KR") : "-";
 
   return (
     <div className="rounded-lg bg-slate-900/60 border border-slate-800/60 p-3 hover:bg-slate-800/40 transition">
-      {/* 상단: 종목명 + 시그널 + 청산 태그 */}
+      {/* 상단: 종목명 + 시그널 + 현재가 + 청산 태그 */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${result.wasCorrect ? "bg-emerald-400" : "bg-red-400"}`} />
@@ -1124,6 +1136,19 @@ function PortfolioTradeRow({ result }: { result: PortfolioResult }) {
           <span className="text-[10px] text-slate-600 font-mono">비중 {result.weight}%</span>
         </div>
         <div className="flex items-center gap-2">
+          {/* 실시간 현재가 */}
+          {livePrice ? (
+            <span className="text-[11px] font-mono text-emerald-300 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+              현재 {livePrice.toLocaleString("ko-KR")}
+              {liveChange != null && (
+                <span className={`ml-1 ${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : "text-slate-500"}`}>
+                  {liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="text-[10px] text-slate-600 animate-pulse">시세 로딩</span>
+          )}
           <span className={`text-[10px] px-2 py-0.5 rounded-full ${exitStyle.bg} ${exitStyle.text}`}>
             {exitStyle.icon} {result.exitReason}{result.exitDay ? ` ${result.exitDay}일차` : ""}
           </span>
