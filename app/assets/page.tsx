@@ -191,7 +191,7 @@ export default function AssetsPage() {
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
           </span>
           <span className="text-xs text-slate-500">
-            실시간 가격 1분 간격 자동 갱신 중
+            실시간 가격 10초 간격 자동 갱신 중
           </span>
         </div>
 

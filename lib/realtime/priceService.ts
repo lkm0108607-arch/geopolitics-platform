@@ -2,72 +2,71 @@
  * Real-time Price Service
  *
  * Fetches live prices from Yahoo Finance for all tracked assets
- * and major Korean sector ETFs.
+ * and ALL Korean ETFs from the koreanETFs database.
  */
 
-// Yahoo Finance symbols for all tracked assets + major Korean sector ETFs
-export const ASSET_SYMBOLS: Record<string, string> = {
-  // Main assets
-  "kospi": "^KS11",
-  "sp500": "^GSPC",
-  "nasdaq": "^IXIC",
-  "kosdaq": "^KQ11",
-  "dxy": "DX-Y.NYB",
-  "gold": "GC=F",
-  "wti-oil": "CL=F",
-  "copper": "HG=F",
-  "usd-krw": "KRW=X",
-  "usd-jpy": "JPY=X",
-  "us-10y-yield": "^TNX",
-  // Korean ETFs (assetId -> Yahoo symbol)
-  "kodex-semiconductor": "091160.KS",
-  "tiger-secondary-battery": "305540.KS",
-  "kodex-bio": "244580.KS",
-  "kodex-defense": "451600.KS",
-  "tiger-ai-semi": "396500.KS",
-  "kodex-gold": "132030.KS",
-  "tiger-us-snp500": "360750.KS",
-  "tiger-us-nasdaq": "133690.KS",
-  "kodex-200": "069500.KS",
-  "tiger-shipbuilding": "139220.KS",
-  // ETF (etf-TICKER format)
-  "etf-069500": "069500.KS",
-  "etf-132030": "132030.KS",
-  "etf-305080": "305080.KS",
-  "etf-091160": "091160.KS",
-  "etf-305540": "305540.KS",
-  "etf-244580": "244580.KS",
-  "etf-451600": "451600.KS",
-  "etf-396500": "396500.KS",
-  "etf-360750": "360750.KS",
-  "etf-133690": "133690.KS",
-  "etf-139220": "139220.KS",
-  "etf-364690": "364690.KS",
-  "etf-455850": "455850.KS",
-  "etf-102110": "102110.KS",
-  "etf-226490": "226490.KS",
-  "etf-252670": "252670.KS",
-  "etf-114800": "114800.KS",
-  "etf-117690": "117690.KS",
-  "etf-458730": "458730.KS",
-  "etf-304940": "304940.KS",
-  "etf-371160": "371160.KS",
-  "etf-381180": "381180.KS",
-  "etf-143850": "143850.KS",
-  "etf-261240": "261240.KS",
-  "etf-309230": "309230.KS",
-  "etf-411060": "411060.KS",
-  "etf-379800": "379800.KS",
-  "etf-453810": "453810.KS",
-  "etf-395170": "395170.KS",
-  "etf-449770": "449770.KS",
-  "etf-472150": "472150.KS",
-};
+import { koreanETFs } from "@/data/koreanETFs";
 
-// Reverse lookup: symbol -> assetId
-const SYMBOL_TO_ASSET: Record<string, string> = Object.fromEntries(
-  Object.entries(ASSET_SYMBOLS).map(([assetId, symbol]) => [symbol, assetId])
-);
+// ── Build ASSET_SYMBOLS dynamically ──────────────────────────────────────────
+
+function buildAssetSymbols(): Record<string, string> {
+  const symbols: Record<string, string> = {
+    // Main global assets
+    "kospi": "^KS11",
+    "sp500": "^GSPC",
+    "nasdaq": "^IXIC",
+    "kosdaq": "^KQ11",
+    "dxy": "DX-Y.NYB",
+    "gold": "GC=F",
+    "wti-oil": "CL=F",
+    "copper": "HG=F",
+    "usd-krw": "KRW=X",
+    "usd-jpy": "JPY=X",
+    "us-10y-yield": "^TNX",
+    // Legacy semantic names
+    "kodex-semiconductor": "091160.KS",
+    "tiger-secondary-battery": "305540.KS",
+    "kodex-bio": "244580.KS",
+    "kodex-defense": "451600.KS",
+    "tiger-ai-semi": "396500.KS",
+    "kodex-gold": "132030.KS",
+    "tiger-us-snp500": "360750.KS",
+    "tiger-us-nasdaq": "133690.KS",
+    "kodex-200": "069500.KS",
+    "tiger-shipbuilding": "139220.KS",
+  };
+
+  // Dynamically add ALL ETFs from koreanETFs database
+  for (const etf of koreanETFs) {
+    const key = `etf-${etf.ticker}`;
+    const yahooSymbol = `${etf.ticker}.KS`;
+    if (!symbols[key]) {
+      symbols[key] = yahooSymbol;
+    }
+  }
+
+  return symbols;
+}
+
+export const ASSET_SYMBOLS: Record<string, string> = buildAssetSymbols();
+
+// Reverse lookup: symbol -> assetId (prefer etf- format for Korean ETFs)
+const SYMBOL_TO_ASSET: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  // First add all entries
+  for (const [assetId, symbol] of Object.entries(ASSET_SYMBOLS)) {
+    // For .KS symbols, prefer etf- format over semantic names
+    if (symbol.endsWith(".KS") && map[symbol] && map[symbol].startsWith("etf-")) {
+      continue; // keep etf- format
+    }
+    map[symbol] = assetId;
+  }
+  // Then overwrite with etf- format for Korean ETFs (prefer this format)
+  for (const etf of koreanETFs) {
+    map[`${etf.ticker}.KS`] = `etf-${etf.ticker}`;
+  }
+  return map;
+})();
 
 export interface LivePrice {
   assetId: string;
@@ -86,16 +85,17 @@ const HEADERS = {
 
 /**
  * Fetches live prices for ALL tracked assets from Yahoo Finance spark API.
- * Splits into batches to avoid URL length limits.
+ * Uses deduplication to avoid fetching the same Yahoo symbol twice.
  */
 export async function fetchAllLivePrices(): Promise<LivePrice[]> {
-  const allSymbols = Object.values(ASSET_SYMBOLS);
+  // Deduplicate Yahoo symbols (multiple assetIds may map to same symbol)
+  const uniqueSymbols = [...new Set(Object.values(ASSET_SYMBOLS))];
 
-  // Yahoo Finance spark API has URL length limits, so batch into groups of 10
-  const batchSize = 10;
+  // Batch into groups of 15 (Yahoo supports larger batches)
+  const batchSize = 15;
   const batches: string[][] = [];
-  for (let i = 0; i < allSymbols.length; i += batchSize) {
-    batches.push(allSymbols.slice(i, i + batchSize));
+  for (let i = 0; i < uniqueSymbols.length; i += batchSize) {
+    batches.push(uniqueSymbols.slice(i, i + batchSize));
   }
 
   const results: LivePrice[] = [];
@@ -110,7 +110,29 @@ export async function fetchAllLivePrices(): Promise<LivePrice[]> {
     }
   }
 
-  return results;
+  // For symbols that map to multiple assetIds (e.g. kodex-semiconductor and etf-091160),
+  // duplicate the price entry for each assetId
+  const priceBySymbol = new Map<string, LivePrice>();
+  for (const p of results) {
+    const symbol = ASSET_SYMBOLS[p.assetId];
+    if (symbol) priceBySymbol.set(symbol, p);
+  }
+
+  const finalResults: LivePrice[] = [];
+  const seen = new Set<string>();
+  for (const [assetId, symbol] of Object.entries(ASSET_SYMBOLS)) {
+    if (seen.has(assetId)) continue;
+    seen.add(assetId);
+    const base = priceBySymbol.get(symbol);
+    if (base) {
+      finalResults.push({
+        ...base,
+        assetId,
+      });
+    }
+  }
+
+  return finalResults;
 }
 
 /**
@@ -161,7 +183,6 @@ async function fetchBatch(symbols: string[]): Promise<LivePrice[]> {
         updatedAt: now,
       });
     } catch {
-      // Skip individual symbol errors
       continue;
     }
   }

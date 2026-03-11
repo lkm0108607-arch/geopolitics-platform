@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { LivePrice } from "@/lib/realtime/priceService";
 
-const POLL_INTERVAL_MS = 60 * 1000; // 60 seconds
+const POLL_INTERVAL_MS = 10 * 1000; // 10 seconds - near real-time updates
 
 interface LivePriceContextValue {
   prices: Map<string, LivePrice>;

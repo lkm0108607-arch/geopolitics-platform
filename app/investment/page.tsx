@@ -434,7 +434,7 @@ export default function InvestmentPage() {
           </div>
           <div className="flex items-center gap-2">
             <span className={`w-1.5 h-1.5 rounded-full ${pricesLoading ? "bg-yellow-400 animate-pulse" : "bg-emerald-400"}`} />
-            <span>시세 {lastFetched ? `${lastFetched.toLocaleTimeString("ko-KR")} 갱신` : "로딩중"} · 1분 간격</span>
+            <span>시세 {lastFetched ? `${lastFetched.toLocaleTimeString("ko-KR")} 갱신` : "로딩중"} · 10초 간격</span>
           </div>
         </div>
 
@@ -452,10 +452,10 @@ export default function InvestmentPage() {
                     <tr className="text-slate-500 text-xs border-b border-slate-800">
                       <th className="text-left px-5 py-3 font-medium">종목</th>
                       <th className="text-right px-3 py-3 font-medium">현재가</th>
-                      <th className="text-center px-3 py-3 font-medium">판단</th>
-                      <th className="text-center px-3 py-3 font-medium">기대 수익</th>
-                      <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">매도 시점</th>
-                      <th className="text-center px-3 py-3 font-medium hidden md:table-cell">손절선</th>
+                      <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">익절가</th>
+                      <th className="text-center px-3 py-3 font-medium hidden md:table-cell">손절가</th>
+                      <th className="text-center px-3 py-3 font-medium">기대수익</th>
+                      <th className="text-center px-3 py-3 font-medium hidden lg:table-cell">매도시점</th>
                       <th className="text-center px-3 py-3 font-medium hidden lg:table-cell">리스크</th>
                       <th className="text-right px-5 py-3 font-medium">비중</th>
                     </tr>
@@ -465,6 +465,8 @@ export default function InvestmentPage() {
                       const lp = prices.get(s.assetId);
                       const price = lp?.price && lp.price > 0 ? lp.price : null;
                       const change = price ? lp?.changePercent : null;
+                      const tpPrice = price ? Math.round(price * (1 + Math.abs(s.targetReturnNum) / 100)) : null;
+                      const slPrice = price && s.stopLoss != null ? Math.round(price * (1 - s.stopLoss / 100)) : null;
                       return (
                       <tr key={s.assetId} className="border-b border-slate-800/50 hover:bg-slate-800/30 transition">
                         <td className="px-5 py-3">
@@ -475,33 +477,32 @@ export default function InvestmentPage() {
                           {price ? (
                             <div>
                               <span className="text-sm font-mono text-white">{price.toLocaleString("ko-KR")}</span>
-                              {s.unit && <span className="text-[10px] text-slate-500 ml-0.5">{s.unit}</span>}
                               {change != null && (
                                 <p className={`text-[10px] font-mono ${change > 0 ? "text-red-400" : change < 0 ? "text-blue-400" : "text-slate-500"}`}>
                                   {change > 0 ? "+" : ""}{change.toFixed(2)}%
                                 </p>
                               )}
                             </div>
+                          ) : <span className="text-[10px] text-slate-600">로딩중</span>}
+                        </td>
+                        <td className="px-3 py-3 text-center hidden sm:table-cell">
+                          {tpPrice ? (
+                            <span className="text-xs font-mono font-bold text-red-400">{tpPrice.toLocaleString("ko-KR")}</span>
                           ) : <span className="text-[10px] text-slate-600">-</span>}
                         </td>
-                        <td className="px-3 py-3 text-center">
-                          <span className={`text-[11px] px-2 py-0.5 rounded-full border ${verdictBg[s.timingVerdict]} ${verdictColors[s.timingVerdict]} font-medium`}>
-                            {s.timingVerdict}
-                          </span>
+                        <td className="px-3 py-3 text-center hidden md:table-cell">
+                          {slPrice ? (
+                            <span className="text-xs font-mono font-bold text-red-400/80">{slPrice.toLocaleString("ko-KR")}</span>
+                          ) : <span className="text-[10px] text-slate-600">-</span>}
                         </td>
                         <td className="px-3 py-3 text-center">
                           <span className={`text-sm font-mono font-bold ${s.targetReturnNum > 0 ? "text-red-400" : "text-blue-400"}`}>
                             {s.targetReturnNum > 0 ? "+" : ""}{s.targetReturnNum.toFixed(1)}%
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-center hidden sm:table-cell">
+                        <td className="px-3 py-3 text-center hidden lg:table-cell">
                           {s.peakDate ? (
                             <span className="text-xs font-mono text-slate-300">{s.peakDate} <span className="text-[10px] text-slate-500">({s.peakDays}일 후)</span></span>
-                          ) : <span className="text-[10px] text-slate-600">-</span>}
-                        </td>
-                        <td className="px-3 py-3 text-center hidden md:table-cell">
-                          {s.stopLoss != null ? (
-                            <span className="text-xs font-mono text-red-400/80">-{s.stopLoss.toFixed(1)}%</span>
                           ) : <span className="text-[10px] text-slate-600">-</span>}
                         </td>
                         <td className={`px-3 py-3 text-center text-xs hidden lg:table-cell ${riskColors[s.riskGrade]}`}>
@@ -678,6 +679,16 @@ function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; liv
   const cfg = signalConfig[item.signal];
   const Icon = cfg.icon;
 
+  // ── 실제 금액 기반 목표가 계산 ──
+  const isBuy = item.signal === "강력매수" || item.signal === "매수";
+  const isSell = item.signal === "강력매도" || item.signal === "매도";
+  const currentPrice = livePrice ?? 0;
+  const takeProfitPrice = currentPrice > 0 ? Math.round(currentPrice * (1 + Math.abs(item.targetReturnNum) / 100)) : null;
+  const stopLossPrice = currentPrice > 0 && item.stopLoss != null ? Math.round(currentPrice * (1 - item.stopLoss / 100)) : null;
+  const entryPrice = currentPrice > 0 ? currentPrice : null;
+
+  const fmtPrice = (p: number | null) => p != null && p > 0 ? p.toLocaleString("ko-KR") : "-";
+
   return (
     <div className={`rounded-xl border ${cfg.border} bg-gradient-to-r ${cfg.gradFrom} to-slate-900/70 overflow-hidden transition-all`}>
       {/* 헤더: 종목 + 핵심 액션 */}
@@ -693,18 +704,27 @@ function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; liv
                 {item.actionLabel}
               </span>
             </div>
-            <div className="flex items-center gap-3 mt-0.5">
-              {livePrice && (
+            <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+              {currentPrice > 0 ? (
                 <span className="text-[12px] font-mono text-slate-300">
-                  {livePrice.toLocaleString("ko-KR")}{item.unit ? ` ${item.unit}` : ""}
+                  현재가 <span className="text-white font-bold">{fmtPrice(currentPrice)}</span>
+                  {item.unit === "%" ? "%" : "원"}
                   {liveChange != null && (
                     <span className={`ml-1.5 ${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : "text-slate-500"}`}>
                       {liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%
                     </span>
                   )}
                 </span>
+              ) : (
+                <span className="text-[11px] text-slate-600">가격 로딩중...</span>
               )}
-              <span className="text-[11px] text-slate-500">{item.summary}</span>
+              {/* 요약된 목표가 표시 (접혀있을 때) */}
+              {!open && currentPrice > 0 && (isBuy || isSell) && (
+                <span className="text-[11px] text-slate-500">
+                  {isBuy ? "익절" : "목표"} <span className={`font-mono font-medium ${isBuy ? "text-red-400" : "text-blue-400"}`}>{fmtPrice(takeProfitPrice)}</span>
+                  {stopLossPrice && <> · 손절 <span className="font-mono font-medium text-red-400/80">{fmtPrice(stopLossPrice)}</span></>}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -733,14 +753,87 @@ function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; liv
       {/* 상세 솔루션 */}
       {open && (
         <div className="border-t border-slate-700/50 p-4 space-y-4 bg-slate-950/40">
-          {/* 타이밍 예측 카드 */}
+
+          {/* ── 핵심 매매 가격 정보 ── */}
+          {currentPrice > 0 && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* 현재가 / 진입가 */}
+              <div className="rounded-lg bg-slate-800/80 border border-slate-600/40 p-3 text-center">
+                <div className="flex items-center justify-center gap-1 mb-1.5 text-emerald-400">
+                  <Crosshair className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-medium">{isBuy ? "매수 진입가" : isSell ? "매도 기준가" : "현재가"}</span>
+                </div>
+                <p className="text-base font-bold font-mono text-white">{fmtPrice(entryPrice)}</p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  {item.unit === "%" ? "%" : "원"}
+                  {liveChange != null && (
+                    <span className={`ml-1 ${liveChange > 0 ? "text-red-400" : liveChange < 0 ? "text-blue-400" : ""}`}>
+                      ({liveChange > 0 ? "+" : ""}{liveChange.toFixed(2)}%)
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              {/* 익절가 (목표가) */}
+              <div className={`rounded-lg border p-3 text-center ${isBuy ? "bg-red-500/10 border-red-500/30" : isSell ? "bg-blue-500/10 border-blue-500/30" : "bg-slate-800/60 border-slate-700/40"}`}>
+                <div className={`flex items-center justify-center gap-1 mb-1.5 ${isBuy ? "text-red-400" : isSell ? "text-blue-400" : "text-slate-400"}`}>
+                  <Banknote className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-medium">{isBuy ? "익절 목표가" : isSell ? "하락 목표가" : "목표가"}</span>
+                </div>
+                <p className={`text-base font-bold font-mono ${isBuy ? "text-red-400" : isSell ? "text-blue-400" : "text-slate-300"}`}>
+                  {fmtPrice(takeProfitPrice)}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  {item.targetReturnNum > 0 ? "+" : ""}{item.targetReturnNum.toFixed(1)}%
+                  {item.peakDate && <> · {isSell ? item.troughDate : item.peakDate}</>}
+                </p>
+              </div>
+
+              {/* 손절가 */}
+              <div className="rounded-lg bg-red-500/5 border border-red-500/20 p-3 text-center">
+                <div className="flex items-center justify-center gap-1 mb-1.5 text-red-400">
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-medium">손절가</span>
+                </div>
+                <p className="text-base font-bold font-mono text-red-400">
+                  {fmtPrice(stopLossPrice)}
+                </p>
+                <p className="text-[10px] text-slate-500 mt-0.5">
+                  {item.stopLoss != null ? `-${item.stopLoss.toFixed(1)}%` : "-"}
+                  {item.riskReward != null && <> · R/R {item.riskReward.toFixed(1)}</>}
+                </p>
+              </div>
+
+              {/* 수익/손실 금액 (1주 기준) */}
+              <div className="rounded-lg bg-slate-800/60 border border-slate-700/40 p-3 text-center">
+                <div className="flex items-center justify-center gap-1 mb-1.5 text-amber-400">
+                  <CircleDollarSign className="w-3.5 h-3.5" />
+                  <span className="text-[10px] font-medium">예상 손익</span>
+                </div>
+                <div className="flex flex-col items-center gap-0.5">
+                  <p className={`text-sm font-bold font-mono ${isBuy ? "text-red-400" : isSell ? "text-blue-400" : "text-slate-300"}`}>
+                    {takeProfitPrice != null && entryPrice != null
+                      ? `${isBuy ? "+" : ""}${(takeProfitPrice - entryPrice).toLocaleString("ko-KR")}`
+                      : "-"}
+                  </p>
+                  <p className="text-[10px] text-red-400/70 font-mono">
+                    {stopLossPrice != null && entryPrice != null
+                      ? `손절 시 ${(stopLossPrice - entryPrice).toLocaleString("ko-KR")}`
+                      : ""}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── 타이밍 예측 카드 ── */}
           {item.peakDays != null && (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <TimingBox
-                label={item.signal === "강력매도" || item.signal === "매도" ? "저점 예상" : "고점 예상"}
-                value={item.signal === "강력매도" || item.signal === "매도" ? item.troughDate : item.peakDate}
-                sub={`${item.signal === "강력매도" || item.signal === "매도" ? item.troughDays : item.peakDays}일 후`}
-                color={item.signal === "강력매도" || item.signal === "매도" ? "text-blue-400" : "text-red-400"}
+                label={isSell ? "저점 예상일" : "고점 예상일"}
+                value={isSell ? item.troughDate : item.peakDate}
+                sub={`${isSell ? item.troughDays : item.peakDays}일 후`}
+                color={isSell ? "text-blue-400" : "text-red-400"}
                 icon={<CalendarDays className="w-3.5 h-3.5" />}
               />
               <TimingBox
@@ -758,38 +851,43 @@ function SolutionCard({ item, livePrice, liveChange }: { item: SolutionItem; liv
                 icon={<Timer className="w-3.5 h-3.5" />}
               />
               <TimingBox
-                label="손절선"
-                value={item.stopLoss != null ? `-${item.stopLoss.toFixed(1)}%` : null}
-                sub={item.riskReward != null ? `R/R ${item.riskReward.toFixed(1)}` : ""}
-                color="text-red-400"
-                icon={<ShieldAlert className="w-3.5 h-3.5" />}
+                label={isBuy ? "매도 시점" : isSell ? "재매수 시점" : "재평가"}
+                value={item.holdingDays ? addDaysStr(item.holdingDays) : null}
+                sub={item.holdingDays ? `${item.holdingDays}일 후` : ""}
+                color="text-cyan-400"
+                icon={<Clock className="w-3.5 h-3.5" />}
               />
             </div>
           )}
 
-          {/* 매매 전략 */}
+          {/* ── 매매 전략 ── */}
           <div className="space-y-2">
             <div className="flex items-start gap-2">
               <span className={`shrink-0 mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold ${
-                item.signal === "강력매수" || item.signal === "매수"
-                  ? "bg-emerald-500/20 text-emerald-400"
-                  : item.signal === "강력매도" || item.signal === "매도"
-                    ? "bg-red-500/20 text-red-400"
+                isBuy ? "bg-emerald-500/20 text-emerald-400"
+                  : isSell ? "bg-red-500/20 text-red-400"
                     : "bg-slate-500/20 text-slate-400"
               }`}>
-                {item.signal === "강력매수" || item.signal === "매수" ? "매수 전략" : item.signal === "강력매도" || item.signal === "매도" ? "매도 전략" : "대기 전략"}
+                {isBuy ? "매수 전략" : isSell ? "매도 전략" : "대기 전략"}
               </span>
-              <p className="text-[12px] text-slate-300 leading-relaxed">{item.entryStrategy}</p>
+              <p className="text-[12px] text-slate-300 leading-relaxed">
+                {item.entryStrategy}
+                {isBuy && entryPrice && <span className="text-emerald-400 font-mono ml-1">(진입가: {fmtPrice(entryPrice)}원)</span>}
+              </p>
             </div>
             <div className="flex items-start gap-2">
               <span className="shrink-0 mt-0.5 px-2 py-0.5 rounded text-[10px] font-bold bg-orange-500/20 text-orange-400">
-                {item.signal === "강력매수" || item.signal === "매수" ? "익절 전략" : "재진입 조건"}
+                {isBuy ? "익절 전략" : "재진입 조건"}
               </span>
-              <p className="text-[12px] text-slate-300 leading-relaxed">{item.exitStrategy}</p>
+              <p className="text-[12px] text-slate-300 leading-relaxed">
+                {item.exitStrategy}
+                {isBuy && takeProfitPrice && <span className="text-red-400 font-mono ml-1">(익절가: {fmtPrice(takeProfitPrice)}원)</span>}
+                {isBuy && stopLossPrice && <span className="text-red-400/70 font-mono ml-1">(손절가: {fmtPrice(stopLossPrice)}원)</span>}
+              </p>
             </div>
           </div>
 
-          {/* 타이밍 게이지 */}
+          {/* ── 타이밍 게이지 ── */}
           <div>
             <div className="flex items-center justify-between mb-1">
               <span className="text-xs text-slate-400">진입 적합도</span>
