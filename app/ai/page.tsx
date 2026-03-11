@@ -155,14 +155,14 @@ const LEARNING_STEPS = [
   },
   {
     step: 5,
-    title: "딥 진단 + 강화 학습",
-    description: "38개 이상의 기술적 지표를 교차검증하며, 지표 세팅, 데이터 반영, 감도, 구조적 한계까지 근본 원인을 분석합니다. 적응형 학습률로 시장 상황에 맞는 최적 보정을 수행합니다.",
+    title: "자산별 독립 강화학습",
+    description: "110개 이상의 종목이 각각 독립적으로 강화학습합니다. KODEX 200의 학습이 TIGER 반도체에 영향을 주지 않고, 금 가격의 학습이 환율 예측에 간섭하지 않습니다. 자산별 개별 가중치, 개별 회고, 개별 진단이 수행됩니다.",
     icon: <Search className="w-6 h-6" />,
   },
   {
     step: 6,
-    title: "가중치 + 전문성 조정",
-    description: "시장 레짐 인식 가중치 조정, 모델 시너지 분석, 성과 추세 추적으로 모델 가중치, AI 배심원 신뢰도, AI 토론 전략을 지능적으로 조정합니다.",
+    title: "자산별 가중치 최적화",
+    description: "각 종목의 특성에 맞게 5개 서브모델 가중치가 독립적으로 조정됩니다. 적응형 학습률, 시장 레짐 인식, 모멘텀 기반 보정으로 종목별 최적 모델 조합을 학습합니다.",
     icon: <RefreshCw className="w-6 h-6" />,
   },
 ];
@@ -264,10 +264,10 @@ export default function AISystemPage() {
             GeoInsight AI 예측 시스템
           </h1>
           <p className="text-slate-400 text-base md:text-lg max-w-3xl mx-auto leading-relaxed">
-            5개의 독립적인 서브모델이 38개 이상의 기술적 지표와 종합 매크로 분석으로 시장을 다각도로 분석하고,
+            110개 이상의 개별 자산(지수, 금리, 환율, 원자재, 국내/해외/테마/채권 ETF)을 각각 독립적으로 예측합니다.
+            5개 서브모델이 38개 이상의 기술적 지표로 분석하고,
             12라운드 AI 토론과 30인 전문 AI 배심원 심의를 거쳐 최종 예측을 도출합니다.
-            5단계 역사적 패턴 분석, 적응형 강화학습, 메타러닝 시스템으로
-            매 사이클마다 자체 진화하며 시장 레짐에 동적으로 적응합니다.
+            모든 종목이 개별 강화학습, 개별 가중치, 개별 회고를 통해 자체 진화합니다.
           </p>
         </div>
       </section>
@@ -346,8 +346,8 @@ export default function AISystemPage() {
             <div className="flex flex-col items-center gap-4">
               {/* Input */}
               <div className="rounded-lg border border-slate-600/50 bg-slate-800/80 px-6 py-3 text-center">
-                <p className="text-xs text-slate-400 mb-1">입력 데이터</p>
-                <p className="text-sm font-medium text-white">실시간 시세 + 기술적 지표 + 거시경제 데이터</p>
+                <p className="text-xs text-slate-400 mb-1">입력 데이터 (110개+ 종목 개별 처리)</p>
+                <p className="text-sm font-medium text-white">실시간 시세 + 기술적 지표 + 거시경제 + 종목별 개별 가중치</p>
               </div>
 
               <ArrowRight className="w-5 h-5 text-slate-500 rotate-90" />
@@ -420,8 +420,8 @@ export default function AISystemPage() {
 
               {/* Output */}
               <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-6 py-3 text-center">
-                <p className="text-xs text-emerald-300 mb-1">최종 출력</p>
-                <p className="text-sm font-medium text-white">방향 + 확률 + 신뢰도 + AI 배심원 판정 + AI 토론 합의</p>
+                <p className="text-xs text-emerald-300 mb-1">최종 출력 (종목별 독립 예측)</p>
+                <p className="text-sm font-medium text-white">방향 + 확률 + 신뢰도 + AI 배심원 판정 + 개별 강화학습</p>
               </div>
             </div>
           </div>
@@ -600,17 +600,23 @@ export default function AISystemPage() {
               <RefreshCw className="w-4 h-4 text-purple-400" />
               학습 사이클 상세
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-slate-400 leading-relaxed">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-400 leading-relaxed">
               <div>
-                <p className="text-slate-300 font-medium mb-1">딥 진단 학습 시스템</p>
+                <p className="text-slate-300 font-medium mb-1">자산별 독립 학습</p>
                 <p>
-                  38개 이상의 기술적 지표(피보나치, 켈트너, Aroon, TRIX, Elder Ray, MFI 등)를 활용한 교차검증으로 오진단을 최소화합니다. 6가지 카테고리 × 3단계 심각도의 정밀 진단과 적응형 학습률이 시장 상황에 맞는 최적 보정을 수행합니다.
+                  110개 이상의 개별 종목(지수, 금리, 환율, 원자재, 국내/해외/테마/채권 ETF)이 각각 독립적인 가중치를 가지며, 매 사이클마다 자산의 특성에 맞게 개별 강화학습이 수행됩니다. 한 종목의 학습 결과가 다른 종목에 영향을 주지 않습니다.
+                </p>
+              </div>
+              <div>
+                <p className="text-slate-300 font-medium mb-1">딥 진단 학습</p>
+                <p>
+                  38개 이상의 기술적 지표를 활용한 교차검증으로 오진단을 최소화합니다. 6가지 카테고리 × 3단계 심각도의 정밀 진단과 적응형 학습률이 종목별 시장 상황에 맞는 최적 보정을 수행합니다.
                 </p>
               </div>
               <div>
                 <p className="text-slate-300 font-medium mb-1">3중 학습 구조</p>
                 <p>
-                  서브모델 가중치 조정(적응형 학습률 + 모멘텀 기반), AI 토론 전략 개선(공격/방어 성공률 기반), AI 배심원 전문성 강화가 동시에 이루어집니다. 메타러닝으로 모델 시너지를 분석하고, 성과 추세를 추적하여 장기적 개선을 보장합니다.
+                  서브모델 가중치 조정(적응형 학습률 + 모멘텀 기반), AI 토론 전략 개선, AI 배심원 전문성 강화가 종목별로 동시에 이루어집니다. 메타러닝으로 모델 시너지를 분석하고 장기적 개선을 보장합니다.
                 </p>
               </div>
             </div>
@@ -792,7 +798,7 @@ export default function AISystemPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-purple-400 mt-0.5">*</span>
-                  <span>적응형 학습률 + 모멘텀 기반 가중치 최적화로 시장 레짐 전환에 동적 적응</span>
+                  <span>110개+ 종목별 독립 가중치: 자산마다 최적 모델 조합이 다르게 학습</span>
                 </li>
               </ul>
             </div>
@@ -933,24 +939,28 @@ export default function AISystemPage() {
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-5">
               <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
                 <Shield className="w-4 h-4 text-rose-400" />
-                강화학습 엔진
+                자산별 독립 강화학습
               </h3>
               <ul className="space-y-2 text-xs text-slate-400">
                 <li className="flex items-start gap-2">
                   <span className="text-rose-400 mt-0.5">*</span>
-                  <span>적응형 학습률: 정확도, 시장 변동성, 학습 모멘텀에 따라 학습 속도 자동 조절</span>
+                  <span>110개+ 종목 각각 독립적인 모델 가중치 보유 및 개별 학습</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-rose-400 mt-0.5">*</span>
-                  <span>시장 레짐 인식: 추세/횡보/고변동 시장별 모델 가중치 자동 최적화</span>
+                  <span>자산별 적응형 학습률: 종목의 정확도, 변동성, 학습 모멘텀에 따라 개별 조절</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-rose-400 mt-0.5">*</span>
-                  <span>모델 시너지 분석: 최적 모델 조합 학습 및 상충 모델 감지</span>
+                  <span>종목별 시장 레짐 인식: 추세/횡보/고변동 상황에 맞는 모델 조합 최적화</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-rose-400 mt-0.5">*</span>
-                  <span>메타러닝: 실패 패턴 분류, 성과 추세 추적, 자기 개선 속도 모니터링</span>
+                  <span>개별 회고: 종목마다 실패 원인 분석, 개선점 도출, 진단 기록 축적</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-rose-400 mt-0.5">*</span>
+                  <span>교차 격리: KODEX 200의 학습이 TIGER 반도체에 영향 없음</span>
                 </li>
               </ul>
             </div>
