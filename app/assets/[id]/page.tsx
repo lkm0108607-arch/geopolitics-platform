@@ -16,6 +16,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { getAssetById } from "@/data/assets";
+import { koreanETFs } from "@/data/koreanETFs";
 import { useLivePrices } from "@/components/LivePriceProvider";
 import { useAIPredictions } from "@/hooks/useAIPredictions";
 import { useAIHistory } from "@/hooks/useAIHistory";
@@ -339,16 +340,22 @@ export default function AssetDetailPage() {
                 관련 ETF
               </h2>
               <div className="space-y-2">
-                {asset.relatedETFTickers.map((ticker) => (
-                  <div
-                    key={ticker}
-                    className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2"
-                  >
-                    <span className="text-sm text-slate-300 font-mono">
-                      {ticker}
-                    </span>
-                  </div>
-                ))}
+                {asset.relatedETFTickers.map((ticker) => {
+                  const etf = koreanETFs.find((e) => e.ticker === ticker);
+                  return (
+                    <div
+                      key={ticker}
+                      className="bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 flex items-center justify-between"
+                    >
+                      <span className="text-sm text-slate-300">
+                        {etf?.name ?? ticker}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-mono">
+                        {ticker}
+                      </span>
+                    </div>
+                  );
+                })}
               </div>
               <Link
                 href="/investment"
