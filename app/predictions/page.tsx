@@ -397,8 +397,8 @@ export default function PredictionsPage() {
               const isExpanded = expandedIds.has(pred.assetId);
               const assetName = asset?.name ?? pred.assetId;
 
-              const livePriceValue = livePrice?.price;
-              const liveChangePercent = livePrice?.changePercent;
+              const livePriceValue = livePrice?.price && livePrice.price > 0 ? livePrice.price : undefined;
+              const liveChangePercent = livePriceValue !== undefined ? livePrice?.changePercent : undefined;
 
               return (
                 <div

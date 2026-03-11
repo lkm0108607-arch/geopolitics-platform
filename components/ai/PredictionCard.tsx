@@ -43,7 +43,7 @@ export default function PredictionCard({
             <div className="text-sm font-semibold text-white truncate">
               {displayName}
             </div>
-            {livePrice && (
+            {livePrice && livePrice.price > 0 && (
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-xs font-mono text-slate-300">
                   {livePrice.price.toLocaleString("ko-KR")}

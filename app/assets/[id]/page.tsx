@@ -60,8 +60,8 @@ export default function AssetDetailPage() {
   }
 
   const livePrice = prices.get(id);
-  const displayPrice = livePrice ? livePrice.price : asset.currentValue;
-  const displayChange = livePrice ? livePrice.changePercent : asset.changePercent;
+  const displayPrice = (livePrice && livePrice.price > 0) ? livePrice.price : asset.currentValue;
+  const displayChange = (livePrice && livePrice.price > 0) ? livePrice.changePercent : asset.changePercent;
 
   const prediction = predictions.find((p) => p.assetId === id);
 
@@ -100,18 +100,24 @@ export default function AssetDetailPage() {
             </p>
           </div>
           <div className="text-right">
-            <p className="text-3xl font-bold text-white">
-              {formatPrice(displayPrice, asset.unit)}
-            </p>
-            <p className={`text-lg font-medium ${getChangeColor(displayChange)}`}>
-              {displayChange > 0 ? "+" : ""}
-              {displayChange.toFixed(2)}%
-            </p>
-            <p className="text-xs text-slate-500 mt-1">
-              {livePrice
-                ? `실시간 (${new Date(livePrice.updatedAt).toLocaleTimeString("ko-KR")})`
-                : `${asset.updatedAt} 기준`}
-            </p>
+            {displayPrice > 0 ? (
+              <>
+                <p className="text-3xl font-bold text-white">
+                  {formatPrice(displayPrice, asset.unit)}
+                </p>
+                <p className={`text-lg font-medium ${getChangeColor(displayChange)}`}>
+                  {displayChange > 0 ? "+" : ""}
+                  {displayChange.toFixed(2)}%
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  {livePrice
+                    ? `실시간 (${new Date(livePrice.updatedAt).toLocaleTimeString("ko-KR")})`
+                    : `${asset.updatedAt} 기준`}
+                </p>
+              </>
+            ) : (
+              <p className="text-lg text-slate-500">가격 데이터 로딩중</p>
+            )}
           </div>
         </div>
 

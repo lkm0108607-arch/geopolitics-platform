@@ -251,8 +251,8 @@ export default function AssetsPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                 {catAssets.map((asset) => {
                   const livePrice = prices.get(asset.id);
-                  const displayPrice = livePrice ? livePrice.price : asset.currentValue;
-                  const displayChange = livePrice
+                  const displayPrice = (livePrice && livePrice.price > 0) ? livePrice.price : asset.currentValue;
+                  const displayChange = (livePrice && livePrice.price > 0)
                     ? livePrice.changePercent
                     : asset.changePercent;
                   const prediction = predictionMap.get(asset.id);
@@ -283,27 +283,33 @@ export default function AssetsPage() {
                             </p>
                           </div>
                           <div className="text-right flex-shrink-0">
-                            <p className="text-xl font-bold text-white font-mono">
-                              {displayPrice.toLocaleString("ko-KR", {
-                                maximumFractionDigits: 2,
-                              })}
-                              {asset.unit === "%" && (
-                                <span className="text-sm text-slate-400 ml-0.5">%</span>
-                              )}
-                            </p>
-                            <div className={`flex items-center justify-end gap-1 ${changeColor}`}>
-                              {isPositive ? (
-                                <TrendingUp className="w-3 h-3" />
-                              ) : isNegative ? (
-                                <TrendingDown className="w-3 h-3" />
-                              ) : (
-                                <Minus className="w-3 h-3" />
-                              )}
-                              <span className="text-sm font-medium font-mono">
-                                {isPositive ? "+" : ""}
-                                {displayChange.toFixed(2)}%
-                              </span>
-                            </div>
+                            {displayPrice > 0 ? (
+                              <>
+                                <p className="text-xl font-bold text-white font-mono">
+                                  {displayPrice.toLocaleString("ko-KR", {
+                                    maximumFractionDigits: 2,
+                                  })}
+                                  {asset.unit === "%" && (
+                                    <span className="text-sm text-slate-400 ml-0.5">%</span>
+                                  )}
+                                </p>
+                                <div className={`flex items-center justify-end gap-1 ${changeColor}`}>
+                                  {isPositive ? (
+                                    <TrendingUp className="w-3 h-3" />
+                                  ) : isNegative ? (
+                                    <TrendingDown className="w-3 h-3" />
+                                  ) : (
+                                    <Minus className="w-3 h-3" />
+                                  )}
+                                  <span className="text-sm font-medium font-mono">
+                                    {isPositive ? "+" : ""}
+                                    {displayChange.toFixed(2)}%
+                                  </span>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-sm text-slate-500">-</p>
+                            )}
                           </div>
                         </div>
 
