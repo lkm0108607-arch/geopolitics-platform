@@ -26,6 +26,7 @@ import {
   CircleDollarSign,
   Crosshair,
   BadgeCheck,
+  ArrowUpDown,
 } from "lucide-react";
 import { useAIPredictions } from "@/hooks/useAIPredictions";
 import type { AIPrediction } from "@/hooks/useAIPredictions";
@@ -283,15 +284,31 @@ export default function InvestmentPage() {
   const { prices, lastFetched, isLoading: pricesLoading } = useLivePrices();
   const [activeTab, setActiveTab] = useState<"action" | "buy" | "sell" | "hold">("action");
   const [showCount, setShowCount] = useState(15);
+  const [sortBy, setSortBy] = useState<"signal" | "return" | "risk" | "timing" | "name">("signal");
 
   const solutions = useMemo(
     () => predictions.map(buildSolution).sort((a, b) => {
-      const order: Record<InvestmentSignal, number> = { "강력매수": 0, "매수": 1, "강력매도": 2, "매도": 3, "관망": 4 };
-      const diff = order[a.signal] - order[b.signal];
-      if (diff !== 0) return diff;
-      return Math.abs(b.targetReturnNum) - Math.abs(a.targetReturnNum);
+      switch (sortBy) {
+        case "return":
+          return Math.abs(b.targetReturnNum) - Math.abs(a.targetReturnNum);
+        case "risk": {
+          const riskOrder: Record<string, number> = { "안전": 0, "보통": 1, "주의": 2, "위험": 3 };
+          return (riskOrder[a.riskGrade] ?? 9) - (riskOrder[b.riskGrade] ?? 9);
+        }
+        case "timing":
+          return b.timingScore - a.timingScore;
+        case "name":
+          return a.name.localeCompare(b.name, "ko");
+        case "signal":
+        default: {
+          const order: Record<InvestmentSignal, number> = { "강력매수": 0, "매수": 1, "강력매도": 2, "매도": 3, "관망": 4 };
+          const diff = order[a.signal] - order[b.signal];
+          if (diff !== 0) return diff;
+          return Math.abs(b.targetReturnNum) - Math.abs(a.targetReturnNum);
+        }
+      }
     }),
-    [predictions]
+    [predictions, sortBy]
   );
 
   const buyItems = solutions.filter((s) => s.signal === "강력매수" || s.signal === "매수");
@@ -526,7 +543,23 @@ export default function InvestmentPage() {
           </section>
         )}
 
-        {/* ── 탭 ────────────────────────────────── */}
+        {/* ── 정렬 + 탭 ────────────────────────────── */}
+        {solutions.length > 0 && (
+          <div className="flex items-center gap-2 mb-2">
+            <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+            <span className="text-xs text-slate-500">정렬:</span>
+            {(["signal", "return", "timing", "risk", "name"] as const).map((key) => {
+              const labels: Record<typeof key, string> = { signal: "시그널", return: "기대수익", timing: "적합도", risk: "리스크", name: "이름" };
+              return (
+                <button key={key} onClick={() => setSortBy(key)}
+                  className={`px-2.5 py-1 text-xs rounded-lg transition ${sortBy === key ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/40" : "text-slate-500 hover:text-slate-300 hover:bg-slate-800"}`}>
+                  {labels[key]}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {solutions.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1">
             <TabBtn active={activeTab === "action"} onClick={() => { setActiveTab("action"); setShowCount(15); }}>

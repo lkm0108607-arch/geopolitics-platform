@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Brain,
@@ -27,6 +27,7 @@ import {
   Shield,
   Search,
   Gavel,
+  ArrowUpDown,
 } from "lucide-react";
 
 import { useAIHistory } from "@/hooks/useAIHistory";
@@ -172,6 +173,8 @@ export default function AISystemPage() {
   const { predictions, isLoading: predictionsLoading } = useAIPredictions();
 
   const isLoading = historyLoading || predictionsLoading;
+  const [modelSortBy, setModelSortBy] = useState<"default" | "weight" | "upVotes" | "avgConf">("default");
+  const [logSortBy, setLogSortBy] = useState<"latest" | "oldest">("latest");
 
   // Get current weights (latest from history or defaults)
   const currentWeights = useMemo(() => {
@@ -216,6 +219,27 @@ export default function AISystemPage() {
 
     return stats;
   }, [predictions]);
+
+  // Sorted models
+  const sortedModels = useMemo(() => {
+    const arr = [...MODELS];
+    switch (modelSortBy) {
+      case "weight":
+        return arr.sort((a, b) => (currentWeights[b.key] ?? b.weight) - (currentWeights[a.key] ?? a.weight));
+      case "upVotes":
+        return arr.sort((a, b) => (modelVoteStats[b.key]?.up ?? 0) - (modelVoteStats[a.key]?.up ?? 0));
+      case "avgConf":
+        return arr.sort((a, b) => (modelVoteStats[b.key]?.avgConf ?? 0) - (modelVoteStats[a.key]?.avgConf ?? 0));
+      default:
+        return arr;
+    }
+  }, [modelSortBy, currentWeights, modelVoteStats]);
+
+  // Sorted learning logs
+  const sortedLogs = useMemo(() => {
+    const logs = learningLogs.slice(-5);
+    return logSortBy === "latest" ? [...logs].reverse() : logs;
+  }, [learningLogs, logSortBy]);
 
   return (
     <div className="min-h-screen bg-slate-950">
@@ -395,13 +419,27 @@ export default function AISystemPage() {
 
         {/* ── Model Cards ── */}
         <section>
-          <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-            <Layers className="w-5 h-5 text-purple-400" />
-            5개 서브모델 상세
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <Layers className="w-5 h-5 text-purple-400" />
+              5개 서브모델 상세
+            </h2>
+            <div className="flex items-center gap-1.5">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+              {(["default", "weight", "upVotes", "avgConf"] as const).map((key) => {
+                const labels: Record<typeof key, string> = { default: "기본", weight: "가중치", upVotes: "상승투표", avgConf: "평균신뢰도" };
+                return (
+                  <button key={key} onClick={() => setModelSortBy(key)}
+                    className={`px-2 py-0.5 text-[11px] rounded transition ${modelSortBy === key ? "bg-purple-600/30 text-purple-300" : "text-slate-500 hover:text-slate-300"}`}>
+                    {labels[key]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {MODELS.map((model) => {
+            {sortedModels.map((model) => {
               const w = currentWeights[model.key] ?? model.weight;
               const stats = modelVoteStats[model.key];
 
@@ -641,16 +679,30 @@ export default function AISystemPage() {
 
         {/* ── Learning Logs ── */}
         <section>
-          <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-purple-400" />
-            최근 학습 기록
-          </h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-purple-400" />
+              최근 학습 기록
+            </h2>
+            <div className="flex items-center gap-1.5">
+              <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+              {(["latest", "oldest"] as const).map((key) => {
+                const labels: Record<typeof key, string> = { latest: "최신순", oldest: "오래된순" };
+                return (
+                  <button key={key} onClick={() => setLogSortBy(key)}
+                    className={`px-2 py-0.5 text-[11px] rounded transition ${logSortBy === key ? "bg-purple-600/30 text-purple-300" : "text-slate-500 hover:text-slate-300"}`}>
+                    {labels[key]}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {isLoading ? (
             <div className="flex items-center justify-center py-12">
               <Loader2 className="w-6 h-6 text-purple-400 animate-spin" />
             </div>
-          ) : recentLogs.length === 0 ? (
+          ) : sortedLogs.length === 0 ? (
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-8 text-center">
               <BookOpen className="w-8 h-8 text-slate-600 mx-auto mb-3" />
               <p className="text-sm text-slate-500">아직 학습 기록이 없습니다</p>
@@ -658,7 +710,7 @@ export default function AISystemPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {recentLogs.map((log) => (
+              {sortedLogs.map((log) => (
                 <div
                   key={`${log.cycleId}-${log.timestamp}`}
                   className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-4 hover:bg-slate-900 transition-colors"

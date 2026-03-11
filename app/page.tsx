@@ -11,6 +11,7 @@ import {
   ChevronRight,
   RefreshCw,
   Loader2,
+  ArrowUpDown,
 } from "lucide-react";
 
 import { useLivePrices } from "@/components/LivePriceProvider";
@@ -42,6 +43,7 @@ export default function HomePage() {
   } = useAIHistory();
 
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState<"direction" | "probability" | "confidence" | "name">("direction");
 
   const toggleCard = (assetId: string) => {
     setExpandedCards((prev) => {
@@ -55,14 +57,25 @@ export default function HomePage() {
     });
   };
 
-  // Sort predictions: 상승 first, then 하락, then 보합/변동성확대
+  // Sort predictions
   const sortedPredictions = useMemo(() => {
-    return [...predictions].sort(
-      (a, b) =>
-        (DIRECTION_ORDER[a.direction] ?? 9) -
-        (DIRECTION_ORDER[b.direction] ?? 9)
-    );
-  }, [predictions]);
+    return [...predictions].sort((a, b) => {
+      switch (sortBy) {
+        case "probability":
+          return b.probability - a.probability;
+        case "confidence":
+          return b.confidence - a.confidence;
+        case "name": {
+          const na = getAssetById(a.assetId)?.name ?? a.assetId;
+          const nb = getAssetById(b.assetId)?.name ?? b.assetId;
+          return na.localeCompare(nb, "ko");
+        }
+        case "direction":
+        default:
+          return (DIRECTION_ORDER[a.direction] ?? 9) - (DIRECTION_ORDER[b.direction] ?? 9);
+      }
+    });
+  }, [predictions, sortBy]);
 
   // Compute average confidence
   const avgConfidence = useMemo(() => {
@@ -211,12 +224,26 @@ export default function HomePage() {
                 </span>
               )}
             </h2>
-            <Link
-              href="/predictions"
-              className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
-            >
-              전체 보기 <ChevronRight className="w-3 h-3" />
-            </Link>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+                {(["direction", "probability", "confidence", "name"] as const).map((key) => {
+                  const labels: Record<typeof key, string> = { direction: "방향", probability: "확률", confidence: "신뢰도", name: "이름" };
+                  return (
+                    <button key={key} onClick={() => setSortBy(key)}
+                      className={`px-2 py-0.5 text-[11px] rounded transition ${sortBy === key ? "bg-purple-600/30 text-purple-300" : "text-slate-500 hover:text-slate-300"}`}>
+                      {labels[key]}
+                    </button>
+                  );
+                })}
+              </div>
+              <Link
+                href="/predictions"
+                className="text-xs text-purple-400 hover:text-purple-300 flex items-center gap-1 transition-colors"
+              >
+                전체 보기 <ChevronRight className="w-3 h-3" />
+              </Link>
+            </div>
           </div>
 
           {predictionsLoading ? (

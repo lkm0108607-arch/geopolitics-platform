@@ -17,6 +17,7 @@ import {
   Inbox,
   AlertTriangle,
   Timer,
+  ArrowUpDown,
 } from "lucide-react";
 import { useLivePrices } from "@/components/LivePriceProvider";
 import { useAIPredictions } from "@/hooks/useAIPredictions";
@@ -95,6 +96,7 @@ export default function PredictionsPage() {
   const [activeTab, setActiveTab] = useState<FilterTab>("전체");
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [showCount, setShowCount] = useState(20); // 초기 20개만 표시
+  const [sortBy, setSortBy] = useState<"confidence" | "probability" | "direction" | "name" | "change">("confidence");
 
   // Toggle expanded card
   const toggleExpand = (assetId: string) => {
@@ -114,8 +116,30 @@ export default function PredictionsPage() {
         (p) => getCategoryForPrediction(p) === activeTab
       );
     }
-    return [...filtered].sort((a, b) => b.confidence - a.confidence);
-  }, [predictions, activeTab]);
+    return [...filtered].sort((a, b) => {
+      switch (sortBy) {
+        case "probability":
+          return b.probability - a.probability;
+        case "direction": {
+          const order: Record<string, number> = { "상승": 0, "하락": 1, "보합": 2, "변동성확대": 3 };
+          return (order[a.direction] ?? 9) - (order[b.direction] ?? 9);
+        }
+        case "name": {
+          const na = getAssetById(a.assetId)?.name ?? a.assetId;
+          const nb = getAssetById(b.assetId)?.name ?? b.assetId;
+          return na.localeCompare(nb, "ko");
+        }
+        case "change": {
+          const ca = prices.get(a.assetId)?.changePercent ?? 0;
+          const cb = prices.get(b.assetId)?.changePercent ?? 0;
+          return Math.abs(cb) - Math.abs(ca);
+        }
+        case "confidence":
+        default:
+          return b.confidence - a.confidence;
+      }
+    });
+  }, [predictions, activeTab, sortBy, prices]);
 
   // Stats
   const bullCount = predictions.filter((p) => p.direction === "상승").length;
@@ -363,6 +387,21 @@ export default function PredictionsPage() {
                 }`}
               >
                 {tab}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* ─── Sort Options ─── */}
+        <div className="flex items-center gap-2">
+          <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
+          <span className="text-xs text-slate-500">정렬:</span>
+          {(["confidence", "probability", "direction", "name", "change"] as const).map((key) => {
+            const labels: Record<typeof key, string> = { confidence: "신뢰도", probability: "확률", direction: "방향", name: "이름", change: "변동률" };
+            return (
+              <button key={key} onClick={() => setSortBy(key)}
+                className={`px-2.5 py-1 text-xs rounded-lg transition ${sortBy === key ? "bg-purple-600/30 text-purple-300 border border-purple-500/40" : "text-slate-500 hover:text-slate-300 hover:bg-slate-800"}`}>
+                {labels[key]}
               </button>
             );
           })}
