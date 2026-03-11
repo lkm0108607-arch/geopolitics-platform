@@ -200,16 +200,20 @@ async function fetchNaverChart(ticker: string): Promise<PriceBar[]> {
     if (!res.ok) return [];
 
     const text = await res.text();
-    // 네이버 차트 응답: 날짜, 시가, 고가, 저가, 종가, 거래량 형태의 배열
-    const lines = text.trim().split("\n").slice(1); // 헤더 제거
+    // 네이버 차트 응답 형태: ["20260102", 61355, 65520, 61355, 65480, 3121543, 0.6],
+    const lines = text.trim().split("\n");
     const bars: PriceBar[] = [];
 
     for (const line of lines) {
-      const cleaned = line.replace(/'/g, "").trim();
-      if (!cleaned || cleaned.startsWith("[")) continue;
-      const parts = cleaned.replace(/[\[\]]/g, "").split(",").map((s) => s.trim());
+      const cleaned = line.trim().replace(/,\s*$/, ""); // 끝 쉼표 제거
+      // ["20260102", 숫자, 숫자, 숫자, 숫자, ...] 패턴 매칭
+      if (!cleaned.startsWith("[\"20")) continue;
+
+      const inner = cleaned.slice(1, -1); // 바깥 [] 제거
+      const parts = inner.split(",").map((s) => s.trim().replace(/"/g, ""));
       if (parts.length < 5) continue;
 
+      // parts: [날짜, 시가, 고가, 저가, 종가, 거래량, 외국인소진율]
       const close = parseFloat(parts[4]);
       const high = parseFloat(parts[2]);
       const low = parseFloat(parts[3]);
@@ -316,12 +320,23 @@ export async function POST() {
       }
     }
 
+    // 비-ETF 한국 자산의 네이버 차트 코드 매핑
+    const NAVER_CHART_CODE: Record<string, string> = {
+      "kospi": "KOSPI",
+      "kosdaq": "KOSDAQ",
+    };
+
     // 3b. 한국 자산 (네이버 금융): Supabase 히스토리 → 없으면 네이버 차트 API fallback
     for (const assetId of NAVER_ASSET_IDS) {
       await loadFromSupabase(assetId, assetDataMap);
       if (!assetDataMap[assetId] || assetDataMap[assetId].length < 20) {
         // Supabase에 데이터 부족 → 네이버 차트에서 직접 가져오기
-        const ticker = assetId.startsWith("etf-") ? assetId.replace("etf-", "") : null;
+        let ticker: string | null = null;
+        if (assetId.startsWith("etf-")) {
+          ticker = assetId.replace("etf-", "");
+        } else if (NAVER_CHART_CODE[assetId]) {
+          ticker = NAVER_CHART_CODE[assetId];
+        }
         if (ticker) {
           await loadFromNaverChart(assetId, ticker, assetDataMap);
         }
