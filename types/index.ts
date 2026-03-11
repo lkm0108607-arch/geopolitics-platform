@@ -281,18 +281,6 @@ export interface AICyclePrediction {
   sources: { title: string; url?: string; date: string }[];
   scenario: string;               // 시나리오 설명
   startPrice: number;             // 예측 시작 시점 자산 가격
-  // ─── 전문가 참여 통계 (100K 풀 기반) ───
-  expertStats?: {
-    totalParticipants: number;    // 해당 자산에 의견을 낸 전문가 수
-    bullCount: number;            // 상승 예측 전문가 수
-    bearCount: number;            // 하락 예측 전문가 수
-    neutralCount: number;         // 보합/변동성 예측 전문가 수
-    avgAccuracyOfBull: number;    // 상승 예측 전문가들의 평균 과거 적중률
-    avgAccuracyOfBear: number;    // 하락 예측 전문가들의 평균 과거 적중률
-    avgAccuracyOfNeutral: number; // 보합 예측 전문가들의 평균 과거 적중률
-    topAccuracyDirection: PredictionDirection; // 적중률 상위 전문가들이 가장 많이 택한 방향
-    weightedProbability: number;  // 적중률 가중 확률 (이것이 최종 AI 확률의 핵심 근거)
-  };
 }
 
 export interface AIPredictionCycle {

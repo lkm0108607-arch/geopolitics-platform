@@ -13,7 +13,7 @@
 
 import { Direction, ModelVote } from "./models";
 import { EnsembleConfig, SubModelVotes, AIPrediction, normalizeWeights } from "./ensemble";
-import { PriceBar, calcSMA, calcEMA, calcRSI, calcATR, calcMACD, calcBollingerBands, calcROC } from "./indicators";
+import { PriceBar, calcSMA, calcEMA, calcRSI, calcATR, calcMACD, calcBollingerBands, calcROC, calcFibonacciLevels, calcMFI, calcKeltnerChannels, calcAroon, calcElderRay, calcTrix, calcCoppockCurve, calcMassIndex, calcPivotPoints } from "./indicators";
 
 // ─── 타입 정의 ────────────────────────────────────────────────────────────────
 
@@ -89,6 +89,63 @@ export interface LearningResult {
 
   weightAdjustment: EnsembleConfig;
   lesson: string; // 종합 리포트 (한국어)
+
+  // ── 고도화 확장 필드 ──
+  advancedScores: AdvancedModelScore[];       // 고도화 점수
+  performanceTrends?: ModelPerformanceTrend[]; // 모델 추세 분석
+  adaptiveLearningRate: number;                // 현재 적응 학습률
+  marketRegime: string;                        // 감지된 시장 레짐
+  metaStats?: MetaLearningStats;               // 메타학습 통계
+}
+
+/** 고도화 점수 결과 */
+export interface AdvancedModelScore {
+  modelName: string;
+  baseScore: number;            // 기존 기본 점수
+  confidenceCalibrationBonus: number; // 확신도 보정 보너스/패널티
+  regimeMultiplier: number;     // 시장 레짐 배수
+  timelinessBonus: number;      // 적시성 보너스
+  riskAdjustedScore: number;    // 위험 조정 점수
+  streakBonus: number;          // 연속 성과 보너스
+  finalScore: number;           // 최종 종합 점수
+  reason: string;               // 점수 산출 사유
+}
+
+/** 적응 학습률 설정 */
+export interface AdaptiveLearningConfig {
+  baseRate: number;          // 0.003 기본값
+  recentAccuracy: number;    // 0-1 최근 정확도
+  marketVolatility: string;  // "low" | "normal" | "high" | "extreme"
+  learningMomentum: number;  // -1 ~ 1, 양수 = 개선 중
+}
+
+/** 모델 성과 추세 */
+export interface ModelPerformanceTrend {
+  modelName: string;
+  recentAccuracy: number;     // 최근 10건 정확도
+  overallAccuracy: number;    // 전체 정확도
+  trend: "improving" | "stable" | "degrading";
+  confidenceCalibration: number; // 확신도↔결과 일치도
+  bestMarketRegime: string;
+  worstMarketRegime: string;
+}
+
+/** 모델 간 시너지 분석 결과 */
+export interface ModelSynergyResult {
+  pair: [string, string];
+  agreementRate: number;      // 동의 비율
+  bothCorrectRate: number;    // 동시 정답 비율
+  synergyScore: number;       // 양수 = 좋은 조합, 음수 = 중복
+}
+
+/** 메타학습 통계 */
+export interface MetaLearningStats {
+  categoryFrequency: Record<string, number>;    // 진단 카테고리별 빈도
+  modelTrajectories: Record<string, string>;    // 모델별 개선 궤적 ("improving" | "stable" | "degrading")
+  marketConditionAccuracy: Record<string, number>; // 시장 상태별 정확도
+  bestModelCombination: string;                 // 최고 성과 모델 조합
+  worstModelCombination: string;                // 최저 성과 모델 조합
+  avgScoresByModel: Record<string, { avg: number; trend: string }>; // 모델별 평균 점수 및 추세
 }
 
 export interface PredictionOutcome {
@@ -213,6 +270,249 @@ function calculateModelScore(
   };
 }
 
+// ─── 시장 레짐 감지 ──────────────────────────────────────────────────────────
+
+/** 시장 레짐을 데이터 기반으로 감지 */
+function detectMarketRegime(preData?: PriceBar[]): string {
+  if (!preData || preData.length < 20) return "불명";
+
+  const atr14 = calcATR(preData, 14);
+  const sma20 = calcSMA(preData, 20);
+  const sma50 = calcSMA(preData, Math.min(50, preData.length));
+  const rsi = calcRSI(preData);
+
+  // 변동성 수준 판별
+  const lastPrice = preData[preData.length - 1].close;
+  const atrPercent = atr14 != null && lastPrice > 0 ? (atr14 / lastPrice) * 100 : 0;
+  const isHighVol = atrPercent > 3;
+  const isExtremeVol = atrPercent > 5;
+
+  // 추세 판별
+  const isTrending = sma20 != null && sma50 != null && Math.abs((sma20 - sma50) / sma50) > 0.02;
+  const isUpTrend = sma20 != null && sma50 != null && sma20 > sma50;
+
+  // RSI 기반 과열/과매도
+  const isOverbought = rsi != null && rsi > 70;
+  const isOversold = rsi != null && rsi < 30;
+
+  if (isExtremeVol) return "극고변동";
+  if (isHighVol) return "고변동";
+  if (isTrending && isUpTrend) return "상승추세";
+  if (isTrending && !isUpTrend) return "하락추세";
+  if (isOverbought) return "과열";
+  if (isOversold) return "과매도";
+  return "횡보";
+}
+
+/** 시장 변동성 수준 분류 */
+function classifyVolatility(preData?: PriceBar[]): "low" | "normal" | "high" | "extreme" {
+  if (!preData || preData.length < 15) return "normal";
+  const atr14 = calcATR(preData, 14);
+  const lastPrice = preData[preData.length - 1].close;
+  if (atr14 == null || lastPrice <= 0) return "normal";
+  const atrPercent = (atr14 / lastPrice) * 100;
+  if (atrPercent > 5) return "extreme";
+  if (atrPercent > 3) return "high";
+  if (atrPercent < 1) return "low";
+  return "normal";
+}
+
+// ─── 모델별 연속 성과 추적 (모듈 수준 상태) ──────────────────────────────────
+
+/** 모델별 연속 적중/미스 스트릭 추적 */
+const modelStreaks: Record<string, { hitStreak: number; missStreak: number }> = {
+  "모멘텀": { hitStreak: 0, missStreak: 0 },
+  "평균회귀": { hitStreak: 0, missStreak: 0 },
+  "변동성": { hitStreak: 0, missStreak: 0 },
+  "교차상관": { hitStreak: 0, missStreak: 0 },
+  "펀더멘털": { hitStreak: 0, missStreak: 0 },
+};
+
+/** 스트릭 업데이트 */
+function updateStreak(modelName: string, wasCorrect: boolean): { hitStreak: number; missStreak: number } {
+  if (!modelStreaks[modelName]) {
+    modelStreaks[modelName] = { hitStreak: 0, missStreak: 0 };
+  }
+  if (wasCorrect) {
+    modelStreaks[modelName].hitStreak += 1;
+    modelStreaks[modelName].missStreak = 0;
+  } else {
+    modelStreaks[modelName].missStreak += 1;
+    modelStreaks[modelName].hitStreak = 0;
+  }
+  return { ...modelStreaks[modelName] };
+}
+
+// ─── 고도화 점수 시스템 ──────────────────────────────────────────────────────
+
+/**
+ * 고도화된 모델 점수 계산
+ *
+ * 기존 calculateModelScore 결과를 보완하여 다음을 추가:
+ * 1. 확신도 보정 (confidence calibration): 확신도↔실제 변동 크기 일치도
+ * 2. 시장 레짐 인식: 추세/횡보/고변동 시장별 모델 가중 배수
+ * 3. 적시성 점수: 예측 방향이 빠르게 맞았는지
+ * 4. 위험 조정 점수: 샤프 비율 유사 — 일관성 보상, 운 좋은 단발 적중 감점
+ * 5. 연속 성과 추적: 연속 적중 보너스 / 연속 미스 감점
+ */
+function calculateAdvancedModelScore(
+  diag: ModelDiagnosis,
+  actual: Direction,
+  actualReturn: number,
+  baseScore: number,
+  marketRegime: string,
+  postData?: PriceBar[],
+): AdvancedModelScore {
+  const reasons: string[] = [];
+
+  // ── 1. 확신도 보정 보너스/패널티 ──
+  let confidenceCalibrationBonus = 0;
+  const absReturn = Math.abs(actualReturn);
+  const confidenceNorm = diag.confidence / 100; // 0~1
+
+  if (diag.wasCorrect) {
+    // 고확신 + 큰 변동 = 잘 맞춘 것 → +7
+    if (diag.confidence >= 65 && absReturn > 2) {
+      confidenceCalibrationBonus = 7;
+      reasons.push(`고확신(${diag.confidence}%)+큰변동(${absReturn.toFixed(1)}%) 적중 +7`);
+    }
+    // 적절한 확신도와 적절한 변동 → +3
+    else if (Math.abs(confidenceNorm - Math.min(absReturn / 5, 1)) < 0.2) {
+      confidenceCalibrationBonus = 3;
+      reasons.push("확신도↔변동크기 잘 매칭 +3");
+    }
+  } else {
+    // 저확신 + 큰 변동 = 기회 놓침 → -4
+    if (diag.confidence < 40 && absReturn > 2) {
+      confidenceCalibrationBonus = -4;
+      reasons.push(`저확신(${diag.confidence}%)+큰변동 기회 놓침 -4`);
+    }
+    // 고확신 + 완전히 틀림 → -6
+    else if (diag.confidence >= 70 && absReturn > 1.5) {
+      confidenceCalibrationBonus = -6;
+      reasons.push(`고확신(${diag.confidence}%) 크게 오판 -6`);
+    }
+  }
+
+  // ── 2. 시장 레짐 인식 배수 ──
+  let regimeMultiplier = 1.0;
+  const modelName = diag.modelName;
+
+  // 추세 시장에서 모멘텀/교차상관 모델 보너스
+  if ((marketRegime === "상승추세" || marketRegime === "하락추세") &&
+      (modelName === "모멘텀" || modelName === "교차상관")) {
+    regimeMultiplier = 1.5;
+    reasons.push(`추세시장(${marketRegime}) ${modelName} 1.5배`);
+  }
+  // 횡보 시장에서 평균회귀 모델 보너스
+  if (marketRegime === "횡보" && modelName === "평균회귀") {
+    regimeMultiplier = 1.5;
+    reasons.push("횡보시장 평균회귀 1.5배");
+  }
+  // 고변동 시장에서 변동성 모델 보너스
+  if ((marketRegime === "고변동" || marketRegime === "극고변동") && modelName === "변동성") {
+    regimeMultiplier = 1.5;
+    reasons.push(`${marketRegime} 변동성모델 1.5배`);
+  }
+
+  // ── 3. 적시성 점수 ──
+  let timelinessBonus = 0;
+  if (diag.wasCorrect && postData && postData.length >= 3) {
+    // 예측 방향이 초반 1/3 기간 내에 맞았는지 확인
+    const earlyThird = Math.max(1, Math.floor(postData.length / 3));
+    const earlyData = postData.slice(0, earlyThird);
+    const startPrice = postData[0].close;
+    let earlyMatch = false;
+
+    for (const bar of earlyData) {
+      const earlyReturn = ((bar.close - startPrice) / startPrice) * 100;
+      if (actual === "상승" && earlyReturn > 0.5) { earlyMatch = true; break; }
+      if (actual === "하락" && earlyReturn < -0.5) { earlyMatch = true; break; }
+    }
+
+    if (earlyMatch) {
+      timelinessBonus = 3;
+      reasons.push("초기 적중(1/3 기간 내) +3");
+    }
+  }
+
+  // ── 4. 위험 조정 점수 (샤프 비율 유사) ──
+  // 일관성 보상: 기본 점수가 양수이고 확신도가 중간 → 안정적
+  let riskAdjustedScore = 0;
+  if (diag.wasCorrect && diag.confidence >= 40 && diag.confidence <= 70) {
+    riskAdjustedScore = 2; // 적정 확신도의 안정적 적중
+    reasons.push("적정확신도 안정 적중 +2");
+  } else if (diag.wasCorrect && diag.confidence > 85) {
+    riskAdjustedScore = -1; // 과도한 확신은 운 요소 의심
+    reasons.push("과도확신(운 요소) -1");
+  }
+
+  // ── 5. 연속 성과 추적 ──
+  const streak = updateStreak(modelName, diag.wasCorrect);
+  let streakBonus = 0;
+  if (streak.hitStreak >= 2) {
+    streakBonus = 3 * (streak.hitStreak - 1); // 2연속부터 보너스
+    reasons.push(`${streak.hitStreak}연속적중 +${streakBonus}`);
+  } else if (streak.missStreak >= 2) {
+    streakBonus = -2 * (streak.missStreak - 1); // 2연속부터 감점
+    reasons.push(`${streak.missStreak}연속미스 ${streakBonus}`);
+  }
+
+  // ── 최종 점수 종합 ──
+  const regimeAdjustedBase = baseScore * regimeMultiplier;
+  const finalScore = regimeAdjustedBase + confidenceCalibrationBonus + timelinessBonus + riskAdjustedScore + streakBonus;
+
+  return {
+    modelName,
+    baseScore,
+    confidenceCalibrationBonus,
+    regimeMultiplier,
+    timelinessBonus,
+    riskAdjustedScore,
+    streakBonus,
+    finalScore: Math.round(finalScore * 100) / 100,
+    reason: reasons.join(", ") || "기본 점수만 적용",
+  };
+}
+
+// ─── 적응 학습률 시스템 ──────────────────────────────────────────────────────
+
+/**
+ * 적응 학습률 계산
+ *
+ * 상황에 따라 학습 속도를 동적으로 조절:
+ * - 정확도 낮음(< 40%): 학습률 상향 → 빠르게 실수에서 배움
+ * - 정확도 높음(> 70%): 학습률 하향 → 좋은 가중치 보존
+ * - 고변동 시장: 학습률 30% 감소 → 노이즈 과반응 방지
+ * - 개선 중(모멘텀 > 0.3): 학습률 20% 감소 → 작동하는 것 보존
+ * - 악화 중(모멘텀 < -0.3): 학습률 40% 증가 → 긴급 교정
+ */
+function calculateAdaptiveLearningRate(config: AdaptiveLearningConfig): number {
+  let rate = config.baseRate;
+
+  // 정확도 기반 조정
+  if (config.recentAccuracy < 0.4) {
+    rate = 0.005; // 실수에서 빠르게 배움
+  } else if (config.recentAccuracy > 0.7) {
+    rate = 0.002; // 좋은 가중치 보존
+  }
+
+  // 시장 변동성 기반 조정
+  if (config.marketVolatility === "high" || config.marketVolatility === "extreme") {
+    rate *= 0.7; // 30% 감소 — 노이즈 과반응 방지
+  }
+
+  // 학습 모멘텀 기반 조정
+  if (config.learningMomentum > 0.3) {
+    rate *= 0.8; // 20% 감소 — 개선 중이면 보존
+  } else if (config.learningMomentum < -0.3) {
+    rate *= 1.4; // 40% 증가 — 악화 시 긴급 교정
+  }
+
+  // 최소/최대 학습률 보호
+  return Math.max(0.001, Math.min(0.008, rate));
+}
+
 // ─── 모델별 심층 진단 ──────────────────────────────────────────────────────────
 
 function isModelCorrect(vote: ModelVote, actual: Direction): boolean {
@@ -301,6 +601,81 @@ function diagnoseMomentum(
         }
       }
     }
+
+    // ── 고도화: Aroon 지표 불일치 점검 ──
+    const aroon = calcAroon(preData);
+    if (aroon != null) {
+      // Aroon이 강한 추세를 보였으나 모델이 반대 예측
+      if (aroon.up > 80 && vote.direction === "하락" && actual === "상승") {
+        issues.push({
+          category: "지표_세팅",
+          severity: "심각",
+          description: `Aroon Up ${aroon.up.toFixed(0)}으로 강한 상승추세였으나 하락 예측. Aroon 지표 미반영`,
+          suggestedFix: "모멘텀 모델에 Aroon 지표를 추세 확인 필터로 통합",
+        });
+        improvements.push("Aroon 지표 기반 추세 확인 로직 추가");
+      }
+      if (aroon.down > 80 && vote.direction === "상승" && actual === "하락") {
+        issues.push({
+          category: "지표_세팅",
+          severity: "심각",
+          description: `Aroon Down ${aroon.down.toFixed(0)}으로 강한 하락추세였으나 상승 예측. Aroon 하락 신호 무시`,
+          suggestedFix: "Aroon Down > 80 시 상승 신호 감쇄 로직 추가",
+        });
+        improvements.push("Aroon 하락 경고 필터 도입");
+      }
+    }
+
+    // ── 고도화: TRIX 장기 모멘텀 괴리 점검 ──
+    const trix = calcTrix(preData);
+    if (trix != null) {
+      if (trix > 0 && vote.direction === "하락" && actual === "상승") {
+        issues.push({
+          category: "감도_문제",
+          severity: "주의",
+          description: `TRIX ${trix.toFixed(4)} 양수(장기 상승 모멘텀)였으나 하락 예측. 장기 모멘텀과 단기 판단 괴리`,
+          suggestedFix: "TRIX 장기 모멘텀 방향과 최종 판단 교차검증 추가",
+        });
+        improvements.push("TRIX 장기 모멘텀 교차검증 도입");
+      }
+      if (trix < 0 && vote.direction === "상승" && actual === "하락") {
+        issues.push({
+          category: "감도_문제",
+          severity: "주의",
+          description: `TRIX ${trix.toFixed(4)} 음수(장기 하락 모멘텀)였으나 상승 예측. 장기 모멘텀 역행`,
+          suggestedFix: "TRIX 음수 구간에서 상승 신호 감쇄 처리",
+        });
+        improvements.push("TRIX 역행 시 신호 감쇄 로직");
+      }
+    }
+
+    // ── 고도화: Elder Ray 충돌 점검 ──
+    const elderRay = calcElderRay(preData);
+    if (elderRay != null) {
+      if (elderRay.bullPower < 0 && elderRay.bearPower < 0 && vote.direction === "상승" && actual === "하락") {
+        issues.push({
+          category: "값_오류",
+          severity: "주의",
+          description: `Elder Ray: Bull(${elderRay.bullPower.toFixed(2)}), Bear(${elderRay.bearPower.toFixed(2)}) 모두 음수인데 상승 예측. 매수세 부재 간과`,
+          suggestedFix: "Elder Ray bull/bear power 동시 음수 시 상승 판단 경고 추가",
+        });
+        improvements.push("Elder Ray 매수/매도 세력 분석 반영");
+      }
+    }
+
+    // ── 고도화: Coppock Curve 사이클 위치 점검 ──
+    const coppock = calcCoppockCurve(preData);
+    if (coppock != null) {
+      if (coppock < -5 && vote.direction === "하락" && actual === "상승") {
+        issues.push({
+          category: "감도_문제",
+          severity: "경미",
+          description: `Coppock Curve ${coppock.toFixed(2)}로 극저점 — 반등 사이클 진입 가능성을 모멘텀 모델이 미감지`,
+          suggestedFix: "Coppock Curve 극저점에서 반등 가능성 가산점 부여",
+        });
+        improvements.push("Coppock Curve 사이클 바닥 감지 로직 추가");
+      }
+    }
   }
 
   if (!correct && issues.length === 0) {
@@ -365,6 +740,79 @@ function diagnoseMeanReversion(
         improvements.push("볼린저 밴드 워킹 감지 및 회귀 신호 비활성화 조건 추가");
       }
     }
+
+    // ── 고도화: 피보나치 수준 근접도 점검 ──
+    const fib = calcFibonacciLevels(preData);
+    if (fib != null && fib.levels.length > 0) {
+      const lastPrice = preData[preData.length - 1].close;
+      const nearestFibDist = Math.min(...fib.levels.map(lv => lv > 0 ? Math.abs((lastPrice - lv) / lv) : Infinity));
+      if (nearestFibDist < 0.01) { // 1% 이내 피보나치 수준
+        issues.push({
+          category: "지표_세팅",
+          severity: "주의",
+          description: `가격이 피보나치 수준에서 ${(nearestFibDist * 100).toFixed(2)}% 이내였으나 회귀 방향 오판. 피보나치 지지/저항 미반영`,
+          suggestedFix: "피보나치 되돌림 수준을 평균회귀 판단에 보조 지표로 활용",
+        });
+        improvements.push("피보나치 되돌림 수준 기반 회귀 타겟 보정");
+      }
+    }
+
+    // ── 고도화: MFI 다이버전스 점검 ──
+    const mfi = calcMFI(preData);
+    if (mfi != null) {
+      if (mfi > 80 && vote.direction === "상승" && actual === "하락") {
+        issues.push({
+          category: "감도_문제",
+          severity: "주의",
+          description: `MFI ${mfi.toFixed(1)}로 과매수 — 자금 유입 과다 상태에서 상승 예측 오판. MFI 다이버전스 미감지`,
+          suggestedFix: "MFI 과매수 구간(> 80)에서 상승 신호 감쇄 적용",
+        });
+        improvements.push("MFI 과매수/과매도 다이버전스 감지 추가");
+      }
+      if (mfi < 20 && vote.direction === "하락" && actual === "상승") {
+        issues.push({
+          category: "감도_문제",
+          severity: "주의",
+          description: `MFI ${mfi.toFixed(1)}로 과매도 — 자금 유출 극단에서 하락 예측 오판. 반등 자금 유입 가능성 무시`,
+          suggestedFix: "MFI < 20 시 하락 신호 약화 및 반등 가능성 가산",
+        });
+        improvements.push("MFI 극단값 반전 신호 통합");
+      }
+    }
+
+    // ── 고도화: 켈트너 채널 스퀴즈 상태 점검 ──
+    const keltner = calcKeltnerChannels(preData);
+    const bbForSqueeze = calcBollingerBands(preData);
+    if (keltner != null && bbForSqueeze != null) {
+      // 볼린저 밴드가 켈트너 채널 안에 들어감 = 스퀴즈 상태
+      const isSqueezing = bbForSqueeze.upper < keltner.upper && bbForSqueeze.lower > keltner.lower;
+      if (isSqueezing) {
+        issues.push({
+          category: "감도_문제",
+          severity: "주의",
+          description: "켈트너-볼린저 스퀴즈 상태(변동성 극도 수축)에서 회귀 예측 실패. 스퀴즈 해소 방향 오판",
+          suggestedFix: "스퀴즈 상태 감지 시 방향 판단을 모멘텀 지표에 위임하는 로직 추가",
+        });
+        improvements.push("켈트너-볼린저 스퀴즈 감지 및 해소 방향 예측 개선");
+      }
+    }
+
+    // ── 고도화: 피벗 포인트 근접도 점검 ──
+    const pivots = calcPivotPoints(preData);
+    if (pivots != null) {
+      const lastPricePivot = preData[preData.length - 1].close;
+      const pivotLevels = [pivots.pivot, pivots.r1, pivots.r2, pivots.s1, pivots.s2];
+      const nearestPivotDist = Math.min(...pivotLevels.map(lv => Math.abs((lastPricePivot - lv) / lv)));
+      if (nearestPivotDist < 0.005) { // 0.5% 이내 피벗 포인트
+        issues.push({
+          category: "지표_세팅",
+          severity: "경미",
+          description: `가격이 피벗 포인트에서 ${(nearestPivotDist * 100).toFixed(2)}% 이내. 피벗 수준 반등/돌파 미판별`,
+          suggestedFix: "피벗 포인트 지지/저항을 평균회귀 판단의 목표가 설정에 활용",
+        });
+        improvements.push("피벗 포인트 기반 회귀 목표가 보정");
+      }
+    }
   }
 
   if (!correct && issues.length === 0) {
@@ -421,6 +869,58 @@ function diagnoseVolatility(
         improvements.push("외부 이벤트 리스크 감지와 변동성 모델 연계");
       }
     }
+
+    // ── 고도화: 켈트너 채널 스퀴즈 미스 점검 ──
+    const keltnerVol = calcKeltnerChannels(preData);
+    const bbVol = calcBollingerBands(preData);
+    if (keltnerVol != null && bbVol != null) {
+      const isSqueezing = bbVol.upper < keltnerVol.upper && bbVol.lower > keltnerVol.lower;
+      if (isSqueezing && actual === "변동성확대") {
+        issues.push({
+          category: "감도_문제",
+          severity: "심각",
+          description: "켈트너-볼린저 스퀴즈(변동성 극도 수축) 상태였으나 후속 변동성 폭발 미감지. 스퀴즈 해소 패턴 누락",
+          suggestedFix: "스퀴즈 지속 기간 모니터링 + 해소 시 변동성 확대 경고 자동 발생",
+        });
+        improvements.push("켈트너-볼린저 스퀴즈→폭발 전환 감지 로직 강화");
+      }
+    }
+
+    // ── 고도화: Mass Index 반전 신호 누락 점검 ──
+    const massIndex = calcMassIndex(preData);
+    if (massIndex != null) {
+      // Mass Index > 27 후 < 26.5 하락 = 반전 신호 ("reversal bulge")
+      if (massIndex > 26.5) {
+        issues.push({
+          category: "지표_세팅",
+          severity: "주의",
+          description: `Mass Index ${massIndex.toFixed(2)}로 반전 벌지 구간 — 변동성 반전 신호를 모델이 미반영`,
+          suggestedFix: "Mass Index 반전 벌지(>27→<26.5) 감지 시 변동성 방향 전환 경고 추가",
+        });
+        improvements.push("Mass Index 반전 벌지 패턴 감지 도입");
+      }
+    }
+
+    // ── 고도화: 거래량 확인 실패 점검 ──
+    if (preData.length >= 10) {
+      const recentVolumes = preData.slice(-5).map(b => b.volume ?? 0);
+      const prevVolumes = preData.slice(-10, -5).map(b => b.volume ?? 0);
+      const avgRecent = recentVolumes.reduce((a, b) => a + b, 0) / recentVolumes.length;
+      const avgPrev = prevVolumes.reduce((a, b) => a + b, 0) / prevVolumes.length;
+
+      if (avgPrev > 0) {
+        const volChange = (avgRecent - avgPrev) / avgPrev;
+        if (volChange > 0.5) {
+          issues.push({
+            category: "감도_문제",
+            severity: "주의",
+            description: `거래량 ${(volChange * 100).toFixed(0)}% 급증했으나 변동성 모델이 방향 판단 오류. 거래량 확인 실패`,
+            suggestedFix: "거래량 급변(50%+)을 변동성 확대 선행 지표로 반영",
+          });
+          improvements.push("거래량 급변 기반 변동성 사전 경고 추가");
+        }
+      }
+    }
   }
 
   if (!correct && issues.length === 0) {
@@ -466,6 +966,26 @@ function diagnoseCorrelation(
     }
   }
 
+  // ── 고도화: 상관관계 레짐 변경 감지 ──
+  if (!correct) {
+    issues.push({
+      category: "구조적_한계",
+      severity: "경미",
+      description: "상관관계 레짐 변경 가능성 — 과거 상관관계가 최근 시장 구조 변화로 무효화되었을 수 있음",
+      suggestedFix: "상관계수 안정성 검증: 최근 10일 vs 30일 vs 60일 상관계수 비교하여 레짐 변경 감지",
+    });
+    improvements.push("다중 기간 상관관계 안정성 검증 로직 추가");
+
+    // 교차자산 다이버전스 감지
+    issues.push({
+      category: "데이터_부족",
+      severity: "경미",
+      description: "교차자산 다이버전스(관련 자산이 반대 방향 이동) 발생 가능성. 상관관계 일시 붕괴 패턴",
+      suggestedFix: "주요 관련 자산 간 단기 다이버전스 감지 시 상관관계 모델 확신도 자동 하향",
+    });
+    improvements.push("교차자산 다이버전스 감지 및 확신도 자동 조정");
+  }
+
   return { modelName: "교차상관", predicted: vote.direction, actual, wasCorrect: correct, confidence: vote.confidence, issues, improvements };
 }
 
@@ -509,6 +1029,35 @@ function diagnoseFundamental(
       });
       improvements.push("뉴스 감성분석 정확도 개선");
     }
+  }
+
+  // ── 고도화: 스마트 머니 플로우 모순 점검 ──
+  if (!correct) {
+    issues.push({
+      category: "데이터_부족",
+      severity: "경미",
+      description: "스마트 머니 플로우(기관 투자자 자금 흐름)와 펀더멘털 판단 모순 가능성. 기관 자금 흐름 데이터 미반영",
+      suggestedFix: "기관 매매 동향, CMF(Chaikin Money Flow) 등 자금 흐름 지표를 펀더멘털 모델에 보조 입력으로 추가",
+    });
+    improvements.push("스마트 머니 플로우 데이터 통합 검토");
+
+    // 다중 오실레이터 합의 무시 점검
+    issues.push({
+      category: "감도_문제",
+      severity: "경미",
+      description: "다중 오실레이터(RSI, MFI, Stochastic 등) 합의를 펀더멘털 판단에서 무시했을 가능성",
+      suggestedFix: "기술적 오실레이터 3개 이상 동일 방향 시 펀더멘털 판단 교차검증 추가",
+    });
+    improvements.push("다중 오실레이터 합의 기반 교차검증 추가");
+
+    // Coppock Curve 사이클 불일치 점검
+    issues.push({
+      category: "구조적_한계",
+      severity: "경미",
+      description: "Coppock Curve 경기 사이클 위치와 펀더멘털 판단 불일치 가능성 — 장기 사이클 전환점 미감지",
+      suggestedFix: "Coppock Curve를 경기 사이클 보조 지표로 펀더멘털 모델에 반영",
+    });
+    improvements.push("Coppock Curve 경기 사이클 반영");
   }
 
   return { modelName: "펀더멘털", predicted: vote.direction, actual, wasCorrect: correct, confidence: vote.confidence, issues, improvements };
@@ -668,11 +1217,54 @@ function analyzeRootCause(
     };
   }
 
+  // ── 고도화: 지표 충돌 감지 ──
+  const allIssueCategories = diagnoses.flatMap(d => d.issues.map(i => i.category));
+  const conflictCount = allIssueCategories.filter(c => c === "값_오류" || c === "감도_문제").length;
+  if (conflictCount >= 3) {
+    secondaryCauses.push(`지표 간 충돌 ${conflictCount}건 감지 — 핵심 지표들이 서로 모순된 신호를 발생`);
+  }
+
+  // ── 고도화: 타이밍 분석 (방향은 맞았으나 타이밍이 틀린 경우) ──
+  const predictionWasCorrect = prediction.direction === actual;
+  if (!predictionWasCorrect && postData && postData.length >= 5) {
+    const predDir = prediction.direction;
+    const startPrice = postData[0].close;
+    // 후반부에 예측 방향이 맞았는지 확인
+    const laterData = postData.slice(Math.floor(postData.length / 2));
+    let eventuallyCorrect = false;
+    for (const bar of laterData) {
+      const ret = ((bar.close - startPrice) / startPrice) * 100;
+      if (predDir === "상승" && ret > 1) { eventuallyCorrect = true; break; }
+      if (predDir === "하락" && ret < -1) { eventuallyCorrect = true; break; }
+    }
+    if (eventuallyCorrect) {
+      secondaryCauses.push("타이밍 오류 — 예측 방향은 후반에 맞았으나 판정 시점에서는 반대. 예측 기간 조정 검토 필요");
+    }
+  }
+
+  // ── 고도화: 확신도 분포 분석 ──
+  const avgConfidence = diagnoses.reduce((sum, d) => sum + d.confidence, 0) / diagnoses.length;
+  const lowConfModels = diagnoses.filter(d => d.confidence < 40).length;
+  if (lowConfModels >= 3) {
+    secondaryCauses.push(`${lowConfModels}개 모델이 저확신(< 40%) — 시장의 진정한 불확실성 상태. 예측 자체를 보류했어야 할 가능성`);
+  }
+
+  // ── 고도화: 고도화 지표 실패 분석 ──
+  const advancedIndicatorIssues = diagnoses.flatMap(d => d.issues)
+    .filter(i => i.description.includes("Aroon") || i.description.includes("TRIX") ||
+                 i.description.includes("피보나치") || i.description.includes("MFI") ||
+                 i.description.includes("켈트너") || i.description.includes("Elder Ray") ||
+                 i.description.includes("Coppock") || i.description.includes("Mass Index") ||
+                 i.description.includes("피벗"));
+  if (advancedIndicatorIssues.length > 0) {
+    secondaryCauses.push(`고도화 지표 ${advancedIndicatorIssues.length}건 실패 감지 — ${advancedIndicatorIssues.map(i => i.description.split(" ")[0]).join(", ")} 등에서 개선 여지`);
+  }
+
   // 기본 원인
   const allImprovements = diagnoses.flatMap((d) => d.improvements);
   return {
     primaryCause: `종합적 판단 오류 — 개별 모델의 미세 오차가 앙상블에서 누적`,
-    secondaryCauses: allImprovements.length > 0 ? allImprovements.slice(0, 3) : ["전반적 모델 세밀도 개선 필요"],
+    secondaryCauses: [...secondaryCauses, ...(allImprovements.length > 0 ? allImprovements.slice(0, 3) : ["전반적 모델 세밀도 개선 필요"])],
     marketCondition: "일반",
     wasUnpredictable: false,
   };
@@ -709,6 +1301,324 @@ function adjustWeights(
   }
 
   return normalizeWeights(adjusted);
+}
+
+// ─── 고도화 가중치 조정 (적응 학습률 + 모멘텀 기반) ──────────────────────────
+
+/** 이전 가중치 기록 (스무딩용) */
+let previousWeights: EnsembleConfig | null = null;
+
+/** 모델별 최근 점수 기록 (회복 부스트용) */
+const recentModelScores: Record<string, number[]> = {};
+
+/**
+ * 고도화된 가중치 조정
+ *
+ * 개선 사항:
+ * - 적응 학습률 적용
+ * - 모멘텀 기반 조정 (현재 점수뿐 아니라 변화 방향 고려)
+ * - 가중치 하한 보호 (8%)
+ * - 가중치 상한 보호 (35%)
+ * - 회복 부스트 (감점 후 개선된 모델에 추가 보상)
+ * - 스무딩: new_weight = 0.7 * calculated + 0.3 * previous (급격한 변동 방지)
+ */
+function adjustWeightsAdvanced(
+  currentWeights: EnsembleConfig,
+  diagnoses: ModelDiagnosis[],
+  ensembleDiag: EnsembleDiagnosis,
+  advancedScores: AdvancedModelScore[],
+  adaptiveRate: number,
+): EnsembleConfig {
+  const adjusted: EnsembleConfig = { ...currentWeights };
+  const MIN_WEIGHT_ADV = 0.08;  // 최소 8%
+  const MAX_WEIGHT_ADV = 0.35;  // 최대 35%
+
+  const keyMap: Record<string, keyof EnsembleConfig> = {
+    "모멘텀": "momentumWeight",
+    "평균회귀": "meanReversionWeight",
+    "변동성": "volatilityWeight",
+    "교차상관": "correlationWeight",
+    "펀더멘털": "fundamentalWeight",
+  };
+
+  for (const as of advancedScores) {
+    const key = keyMap[as.modelName];
+    if (!key) continue;
+
+    // 적응 학습률 기반 점수→가중치 변환
+    const delta = as.finalScore * adaptiveRate;
+
+    // 모멘텀 기반 추가 조정: 최근 점수 기록과 비교
+    if (!recentModelScores[as.modelName]) {
+      recentModelScores[as.modelName] = [];
+    }
+    recentModelScores[as.modelName].push(as.finalScore);
+    if (recentModelScores[as.modelName].length > 10) {
+      recentModelScores[as.modelName].shift();
+    }
+
+    const scores = recentModelScores[as.modelName];
+    let momentumAdjust = 0;
+    if (scores.length >= 3) {
+      const recent3Avg = scores.slice(-3).reduce((a, b) => a + b, 0) / 3;
+      const olderAvg = scores.slice(0, -3).reduce((a, b) => a + b, 0) / Math.max(1, scores.length - 3);
+      const scoreMomentum = recent3Avg - olderAvg;
+      momentumAdjust = scoreMomentum * adaptiveRate * 0.5; // 모멘텀 방향 50% 추가 반영
+    }
+
+    // 회복 부스트: 최근 감점 후 양의 점수 → 추가 보상
+    let recoveryBoost = 0;
+    if (scores.length >= 2) {
+      const prevScore = scores[scores.length - 2];
+      if (prevScore < -5 && as.finalScore > 5) {
+        recoveryBoost = adaptiveRate * 3; // 회복 보상
+      }
+    }
+
+    let rawWeight = adjusted[key] + delta + momentumAdjust + recoveryBoost;
+
+    // 하한/상한 보호
+    rawWeight = Math.max(rawWeight, MIN_WEIGHT_ADV);
+    rawWeight = Math.min(rawWeight, MAX_WEIGHT_ADV);
+
+    // 스무딩: 70% 계산값 + 30% 이전값 (급격한 변동 방지)
+    if (previousWeights) {
+      rawWeight = 0.7 * rawWeight + 0.3 * previousWeights[key];
+    }
+
+    adjusted[key] = rawWeight;
+  }
+
+  // 이전 가중치 기록
+  previousWeights = { ...adjusted };
+
+  return normalizeWeights(adjusted);
+}
+
+// ─── 모델 성과 추세 분석 ─────────────────────────────────────────────────────
+
+/**
+ * 모델별 성과 추세 분석
+ *
+ * 최근 결과들을 기반으로 각 모델의:
+ * - 최근 정확도 vs 전체 정확도
+ * - 개선/안정/악화 추세
+ * - 확신도 보정 정확도
+ * - 최적/최악 시장 레짐
+ */
+function analyzeModelTrend(recentResults: LearningResult[], modelName: string): ModelPerformanceTrend {
+  const modelKey = modelName as keyof LearningResult["modelPerformance"];
+  const nameMap: Record<string, keyof LearningResult["modelPerformance"]> = {
+    "모멘텀": "momentum",
+    "평균회귀": "meanReversion",
+    "변동성": "volatility",
+    "교차상관": "correlation",
+    "펀더멘털": "fundamental",
+  };
+  const perfKey = nameMap[modelName] || "momentum";
+
+  // 전체 정확도
+  const total = recentResults.length;
+  const correctAll = recentResults.filter(r => r.modelPerformance[perfKey]).length;
+  const overallAccuracy = total > 0 ? correctAll / total : 0;
+
+  // 최근 10건 정확도
+  const recent10 = recentResults.slice(-10);
+  const correctRecent = recent10.filter(r => r.modelPerformance[perfKey]).length;
+  const recentAccuracy = recent10.length > 0 ? correctRecent / recent10.length : 0;
+
+  // 추세 판별
+  let trend: "improving" | "stable" | "degrading" = "stable";
+  if (recentAccuracy - overallAccuracy > 0.1) trend = "improving";
+  else if (overallAccuracy - recentAccuracy > 0.1) trend = "degrading";
+
+  // 확신도 보정 정확도: 확신도가 높을 때 정답, 낮을 때 오답이면 보정 잘 된 것
+  let calibrationScore = 0;
+  let calibrationCount = 0;
+  for (const r of recentResults) {
+    const diag = r.modelDiagnoses.find(d => d.modelName === modelName);
+    if (diag) {
+      const confNorm = diag.confidence / 100;
+      const outcomeScore = diag.wasCorrect ? 1 : 0;
+      calibrationScore += 1 - Math.abs(confNorm - outcomeScore);
+      calibrationCount++;
+    }
+  }
+  const confidenceCalibration = calibrationCount > 0 ? calibrationScore / calibrationCount : 0.5;
+
+  // 시장 레짐별 성과 (marketRegime 필드 활용)
+  const regimePerf: Record<string, { correct: number; total: number }> = {};
+  for (const r of recentResults) {
+    const regime = r.marketRegime || "불명";
+    if (!regimePerf[regime]) regimePerf[regime] = { correct: 0, total: 0 };
+    regimePerf[regime].total++;
+    const diag = r.modelDiagnoses.find(d => d.modelName === modelName);
+    if (diag?.wasCorrect) regimePerf[regime].correct++;
+  }
+
+  let bestRegime = "불명";
+  let worstRegime = "불명";
+  let bestRate = -1;
+  let worstRate = 2;
+  for (const [regime, perf] of Object.entries(regimePerf)) {
+    const rate = perf.total > 0 ? perf.correct / perf.total : 0;
+    if (rate > bestRate) { bestRate = rate; bestRegime = regime; }
+    if (rate < worstRate) { worstRate = rate; worstRegime = regime; }
+  }
+
+  return {
+    modelName,
+    recentAccuracy,
+    overallAccuracy,
+    trend,
+    confidenceCalibration,
+    bestMarketRegime: bestRegime,
+    worstMarketRegime: worstRegime,
+  };
+}
+
+// ─── 모델 간 시너지 분석 ─────────────────────────────────────────────────────
+
+/**
+ * 모델 쌍별 시너지 분석
+ *
+ * - 동의율: 두 모델이 같은 방향 예측한 비율
+ * - 동시 정답율: 동의했을 때 둘 다 맞은 비율
+ * - 시너지 점수: 양수 = 좋은 조합, 음수 = 중복/무의미
+ */
+function analyzeModelSynergies(results: LearningResult[]): ModelSynergyResult[] {
+  const modelNames = ["모멘텀", "평균회귀", "변동성", "교차상관", "펀더멘털"];
+  const synergies: ModelSynergyResult[] = [];
+
+  for (let i = 0; i < modelNames.length; i++) {
+    for (let j = i + 1; j < modelNames.length; j++) {
+      const nameA = modelNames[i];
+      const nameB = modelNames[j];
+      let agreements = 0;
+      let bothCorrect = 0;
+      let total = 0;
+
+      for (const r of results) {
+        const diagA = r.modelDiagnoses.find(d => d.modelName === nameA);
+        const diagB = r.modelDiagnoses.find(d => d.modelName === nameB);
+        if (!diagA || !diagB) continue;
+        total++;
+
+        if (diagA.predicted === diagB.predicted) {
+          agreements++;
+          if (diagA.wasCorrect && diagB.wasCorrect) {
+            bothCorrect++;
+          }
+        }
+      }
+
+      const agreementRate = total > 0 ? agreements / total : 0;
+      const bothCorrectRate = agreements > 0 ? bothCorrect / agreements : 0;
+      // 시너지 점수: 동의 시 정답률이 높고, 동의율이 적절(0.3~0.7)하면 시너지 높음
+      // 너무 높은 동의율 = 중복
+      const diversityBonus = 1 - Math.abs(agreementRate - 0.5) * 2; // 0.5일 때 최대
+      const synergyScore = (bothCorrectRate - 0.5) * 2 * diversityBonus;
+
+      synergies.push({
+        pair: [nameA, nameB],
+        agreementRate: Math.round(agreementRate * 1000) / 1000,
+        bothCorrectRate: Math.round(bothCorrectRate * 1000) / 1000,
+        synergyScore: Math.round(synergyScore * 1000) / 1000,
+      });
+    }
+  }
+
+  return synergies.sort((a, b) => b.synergyScore - a.synergyScore);
+}
+
+// ─── 메타학습 통계 ───────────────────────────────────────────────────────────
+
+/**
+ * 메타학습 통계 수집
+ *
+ * 배치 학습 결과를 종합하여:
+ * - 진단 카테고리별 빈도
+ * - 모델별 개선 궤적
+ * - 시장 상태별 정확도
+ * - 최고/최저 모델 조합
+ * - 모델별 평균 점수 및 추세
+ */
+function collectMetaLearningStats(results: LearningResult[]): MetaLearningStats {
+  // 카테고리별 빈도
+  const categoryFrequency: Record<string, number> = {};
+  for (const r of results) {
+    for (const d of r.modelDiagnoses) {
+      for (const issue of d.issues) {
+        categoryFrequency[issue.category] = (categoryFrequency[issue.category] || 0) + 1;
+      }
+    }
+  }
+
+  // 모델별 개선 궤적
+  const modelNames = ["모멘텀", "평균회귀", "변동성", "교차상관", "펀더멘털"];
+  const modelTrajectories: Record<string, string> = {};
+  for (const name of modelNames) {
+    const trend = analyzeModelTrend(results, name);
+    modelTrajectories[name] = trend.trend;
+  }
+
+  // 시장 상태별 정확도
+  const marketConditionAccuracy: Record<string, number> = {};
+  const conditionCounts: Record<string, { correct: number; total: number }> = {};
+  for (const r of results) {
+    const regime = r.marketRegime || "불명";
+    if (!conditionCounts[regime]) conditionCounts[regime] = { correct: 0, total: 0 };
+    conditionCounts[regime].total++;
+    if (r.wasCorrect) conditionCounts[regime].correct++;
+  }
+  for (const [regime, counts] of Object.entries(conditionCounts)) {
+    marketConditionAccuracy[regime] = counts.total > 0 ? Math.round((counts.correct / counts.total) * 1000) / 1000 : 0;
+  }
+
+  // 모델 조합 성과 분석
+  const comboPerf: Record<string, { correct: number; total: number }> = {};
+  for (const r of results) {
+    const correctModels = r.modelDiagnoses.filter(d => d.wasCorrect).map(d => d.modelName).sort().join("+");
+    const key = correctModels || "전모델오답";
+    if (!comboPerf[key]) comboPerf[key] = { correct: 0, total: 0 };
+    comboPerf[key].total++;
+    if (r.wasCorrect) comboPerf[key].correct++;
+  }
+
+  let bestCombo = "없음";
+  let worstCombo = "없음";
+  let bestComboRate = -1;
+  let worstComboRate = 2;
+  for (const [combo, perf] of Object.entries(comboPerf)) {
+    if (perf.total < 2) continue; // 최소 2건 이상
+    const rate = perf.correct / perf.total;
+    if (rate > bestComboRate) { bestComboRate = rate; bestCombo = combo; }
+    if (rate < worstComboRate) { worstComboRate = rate; worstCombo = combo; }
+  }
+
+  // 모델별 평균 점수 및 추세
+  const avgScoresByModel: Record<string, { avg: number; trend: string }> = {};
+  for (const name of modelNames) {
+    const scores = results.flatMap(r => r.advancedScores?.filter(s => s.modelName === name).map(s => s.finalScore) || []);
+    if (scores.length === 0) {
+      // advancedScores가 아직 없는 경우 기존 modelScores 사용
+      const fallbackScores = results.flatMap(r => r.modelScores.filter(s => s.modelName === name).map(s => s.score));
+      const avg = fallbackScores.length > 0 ? fallbackScores.reduce((a, b) => a + b, 0) / fallbackScores.length : 0;
+      avgScoresByModel[name] = { avg: Math.round(avg * 100) / 100, trend: modelTrajectories[name] || "stable" };
+    } else {
+      const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+      avgScoresByModel[name] = { avg: Math.round(avg * 100) / 100, trend: modelTrajectories[name] || "stable" };
+    }
+  }
+
+  return {
+    categoryFrequency,
+    modelTrajectories,
+    marketConditionAccuracy,
+    bestModelCombination: bestCombo,
+    worstModelCombination: worstCombo,
+    avgScoresByModel,
+  };
 }
 
 // ─── 종합 리포트 생성 ──────────────────────────────────────────────────────────
@@ -831,7 +1741,7 @@ export function learn(
     postData,
   );
 
-  // 4. 강화학습 점수 계산
+  // 4. 강화학습 점수 계산 (기존)
   const minorityCorrectSet = new Set(ensembleDiagnosis.correctMinorityModels);
   const modelScores: ModelScore[] = modelDiagnoses.map((diag) =>
     calculateModelScore(
@@ -843,8 +1753,44 @@ export function learn(
   );
   const totalScore = modelScores.reduce((sum, ms) => sum + ms.score, 0);
 
-  // 5. 가중치 조정 (점수 기반)
-  const weightAdjustment = adjustWeights(currentWeights, modelDiagnoses, ensembleDiagnosis, modelScores);
+  // 4-1. 시장 레짐 감지
+  const marketRegime = detectMarketRegime(preData);
+
+  // 4-2. 고도화 점수 계산
+  const advancedScores: AdvancedModelScore[] = modelDiagnoses.map((diag, idx) =>
+    calculateAdvancedModelScore(
+      diag,
+      actualDirection,
+      actualReturnPercent,
+      modelScores[idx].score,
+      marketRegime,
+      postData,
+    ),
+  );
+
+  // 4-3. 적응 학습률 계산
+  const volatilityLevel = classifyVolatility(preData);
+  const correctModelsCount = modelDiagnoses.filter(d => d.wasCorrect).length;
+  const recentAccuracy = correctModelsCount / modelDiagnoses.length;
+  // 학습 모멘텀: 고도화 점수의 평균 방향으로 추정
+  const avgAdvScore = advancedScores.reduce((s, a) => s + a.finalScore, 0) / advancedScores.length;
+  const learningMomentum = Math.max(-1, Math.min(1, avgAdvScore / 20)); // 정규화
+
+  const adaptiveLearningRate = calculateAdaptiveLearningRate({
+    baseRate: 0.003,
+    recentAccuracy,
+    marketVolatility: volatilityLevel,
+    learningMomentum,
+  });
+
+  // 5. 고도화 가중치 조정 (적응 학습률 + 모멘텀 기반)
+  const weightAdjustment = adjustWeightsAdvanced(
+    currentWeights,
+    modelDiagnoses,
+    ensembleDiagnosis,
+    advancedScores,
+    adaptiveLearningRate,
+  );
 
   // 6. 놓친 요인 (기존 호환용)
   const missedFactors = modelDiagnoses
@@ -889,6 +1835,10 @@ export function learn(
     totalScore,
     weightAdjustment,
     lesson,
+    // ── 고도화 확장 필드 ──
+    advancedScores,
+    adaptiveLearningRate,
+    marketRegime,
   };
 }
 
@@ -918,7 +1868,7 @@ export function batchLearn(
   const severeCount = allIssues.filter((i) => i.severity === "심각").length;
   const warningCount = allIssues.filter((i) => i.severity === "주의").length;
 
-  // 모델별 누적 점수
+  // 모델별 누적 점수 (기존)
   const modelTotalScores: Record<string, number> = {};
   for (const r of results) {
     for (const ms of r.modelScores) {
@@ -927,18 +1877,74 @@ export function batchLearn(
   }
   const batchTotalScore = Object.values(modelTotalScores).reduce((a, b) => a + b, 0);
 
+  // ── 고도화: 모델별 고도화 누적 점수 ──
+  const advancedTotalScores: Record<string, number> = {};
+  for (const r of results) {
+    for (const as of (r.advancedScores || [])) {
+      advancedTotalScores[as.modelName] = (advancedTotalScores[as.modelName] || 0) + as.finalScore;
+    }
+  }
+
+  // ── 고도화: 메타학습 통계 수집 ──
+  const metaStats = collectMetaLearningStats(results);
+
+  // ── 고도화: 성과 추세 분석 ──
+  const modelNames = ["모멘텀", "평균회귀", "변동성", "교차상관", "펀더멘털"];
+  const performanceTrends = modelNames.map(name => analyzeModelTrend(results, name));
+
+  // ── 고도화: 모델 시너지 분석 ──
+  const synergies = analyzeModelSynergies(results);
+
+  // 결과에 메타 통계 및 추세 정보 추가 (마지막 결과에)
+  if (results.length > 0) {
+    const lastResult = results[results.length - 1];
+    lastResult.metaStats = metaStats;
+    lastResult.performanceTrends = performanceTrends;
+  }
+
   const allImprovements = [...new Set(results.flatMap((r) => r.modelDiagnoses.flatMap((d) => d.improvements)))];
 
+  // ── 고도화: 평균 적응 학습률 ──
+  const avgAdaptiveRate = results.length > 0
+    ? results.reduce((s, r) => s + (r.adaptiveLearningRate || 0.003), 0) / results.length
+    : 0.003;
+
   const summary = [
-    `═══ 배치 학습 리포트 ═══`,
+    `═══ 배치 학습 리포트 (고도화) ═══`,
     `총 ${outcomes.length}건 학습 완료 | 정확도: ${accuracy}% (${correctCount}/${outcomes.length})`,
     `총 강화학습 점수: ${batchTotalScore > 0 ? "+" : ""}${batchTotalScore}점`,
+    `평균 적응 학습률: ${avgAdaptiveRate.toFixed(4)}`,
     `발견된 이슈: 심각 ${severeCount}건, 주의 ${warningCount}건`,
     ``,
-    `모델별 누적 점수:`,
+    `─── 모델별 기본 누적 점수 ───`,
     ...Object.entries(modelTotalScores)
       .sort(([, a], [, b]) => b - a)
       .map(([name, score]) => `  ${name}: ${score > 0 ? "+" : ""}${score}점`),
+    ``,
+    `─── 모델별 고도화 누적 점수 ───`,
+    ...Object.entries(advancedTotalScores)
+      .sort(([, a], [, b]) => b - a)
+      .map(([name, score]) => `  ${name}: ${score > 0 ? "+" : ""}${score.toFixed(1)}점`),
+    ``,
+    `─── 모델별 성과 추세 ───`,
+    ...performanceTrends.map(t =>
+      `  ${t.modelName}: 최근${(t.recentAccuracy * 100).toFixed(0)}% / 전체${(t.overallAccuracy * 100).toFixed(0)}% [${t.trend === "improving" ? "개선중" : t.trend === "degrading" ? "악화중" : "안정"}] 최적레짐:${t.bestMarketRegime} 최악레짐:${t.worstMarketRegime}`),
+    ``,
+    `─── 모델 시너지 TOP 3 ───`,
+    ...synergies.slice(0, 3).map(s =>
+      `  ${s.pair[0]}+${s.pair[1]}: 동의율${(s.agreementRate * 100).toFixed(0)}% 동시정답${(s.bothCorrectRate * 100).toFixed(0)}% 시너지${s.synergyScore > 0 ? "+" : ""}${s.synergyScore.toFixed(3)}`),
+    ``,
+    `─── 진단 카테고리 빈도 ───`,
+    ...Object.entries(metaStats.categoryFrequency)
+      .sort(([, a], [, b]) => b - a)
+      .map(([cat, freq]) => `  ${cat}: ${freq}건`),
+    ``,
+    `─── 시장 상태별 정확도 ───`,
+    ...Object.entries(metaStats.marketConditionAccuracy)
+      .map(([regime, acc]) => `  ${regime}: ${(acc * 100).toFixed(1)}%`),
+    ``,
+    `최고 모델 조합: ${metaStats.bestModelCombination}`,
+    `최저 모델 조합: ${metaStats.worstModelCombination}`,
     ``,
     `조정된 가중치:`,
     `  모멘텀: ${(currentWeights.momentumWeight * 100).toFixed(1)}%`,

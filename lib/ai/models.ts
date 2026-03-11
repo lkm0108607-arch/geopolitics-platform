@@ -216,6 +216,98 @@ export function momentumModel(data: PriceBar[], advancedSignals?: AdvancedSignal
         reasons.push(`혼조된 고점/저점 패턴. 추세 전환 가능성 주시 필요`);
       }
     }
+
+    // ─── 신규 고급 모멘텀 시그널 ───
+
+    // Aroon 추세 시그널
+    if (advancedSignals.aroonSignal) {
+      const { trend, strength } = advancedSignals.aroonSignal;
+      if (trend === "상승" && strength > 70) {
+        signals.bullish += 2;
+        reasons.push(`Aroon 강한 상승 추세 (강도 ${strength.toFixed(0)}%). 신고가 갱신 빈도 높음`);
+      } else if (trend === "상승") {
+        signals.bullish += 1;
+        reasons.push(`Aroon 상승 추세 감지 (강도 ${strength.toFixed(0)}%)`);
+      } else if (trend === "하락" && strength > 70) {
+        signals.bearish += 2;
+        reasons.push(`Aroon 강한 하락 추세 (강도 ${strength.toFixed(0)}%). 신저가 갱신 빈도 높음`);
+      } else if (trend === "하락") {
+        signals.bearish += 1;
+        reasons.push(`Aroon 하락 추세 감지 (강도 ${strength.toFixed(0)}%)`);
+      }
+    }
+
+    // TRIX 시그널 (삼중 지수 이동평균)
+    if (advancedSignals.trixSignal) {
+      const { direction, crossover } = advancedSignals.trixSignal;
+      if (direction === "상승" && crossover) {
+        signals.bullish += 2;
+        reasons.push(`TRIX 상향 교차. 장기 모멘텀 전환 확인`);
+      } else if (direction === "상승") {
+        signals.bullish += 1;
+        reasons.push(`TRIX 양수 영역. 장기 상승 모멘텀 유지`);
+      } else if (direction === "하락" && crossover) {
+        signals.bearish += 2;
+        reasons.push(`TRIX 하향 교차. 장기 모멘텀 약화 확인`);
+      } else if (direction === "하락") {
+        signals.bearish += 1;
+        reasons.push(`TRIX 음수 영역. 장기 하락 모멘텀 유지`);
+      }
+    }
+
+    // Coppock Curve 시그널 (장기 모멘텀)
+    if (advancedSignals.coppockSignal) {
+      const { direction, turning } = advancedSignals.coppockSignal;
+      if (direction === "상승" && turning) {
+        signals.bullish += 2;
+        reasons.push(`Coppock Curve 바닥 반전 신호. 장기 매수 기회 시사`);
+      } else if (direction === "상승") {
+        signals.bullish += 1;
+        reasons.push(`Coppock Curve 양수 영역. 장기 상승 사이클`);
+      } else if (direction === "하락" && turning) {
+        signals.bearish += 2;
+        reasons.push(`Coppock Curve 고점 반전 신호. 장기 매도 경고`);
+      } else if (direction === "하락") {
+        signals.bearish += 1;
+        reasons.push(`Coppock Curve 음수 영역. 장기 하락 사이클`);
+      }
+    }
+
+    // Elder Ray 시그널 (매수/매도 세력 분석)
+    if (advancedSignals.elderRaySignal) {
+      const { signal, bullPower, bearPower } = advancedSignals.elderRaySignal;
+      if (signal === "상승" && bullPower > 0 && bearPower > 0) {
+        signals.bullish += 2;
+        reasons.push(`Elder Ray 강세: 매수세력(${bullPower.toFixed(1)})과 매도세력(${bearPower.toFixed(1)}) 모두 양수. 강한 상승 추세`);
+      } else if (signal === "상승") {
+        signals.bullish += 1;
+        reasons.push(`Elder Ray 매수 세력 우위. 상승 모멘텀 확인`);
+      } else if (signal === "하락" && bullPower < 0 && bearPower < 0) {
+        signals.bearish += 2;
+        reasons.push(`Elder Ray 약세: 매수세력(${bullPower.toFixed(1)})과 매도세력(${bearPower.toFixed(1)}) 모두 음수. 강한 하락 추세`);
+      } else if (signal === "하락") {
+        signals.bearish += 1;
+        reasons.push(`Elder Ray 매도 세력 우위. 하락 모멘텀 확인`);
+      }
+    }
+
+    // Multi-Oscillator Consensus (다중 오실레이터 합의)
+    if (advancedSignals.multiOscillatorConsensus) {
+      const { consensus, strength, agreeing } = advancedSignals.multiOscillatorConsensus;
+      if (consensus === "상승" && agreeing >= 4) {
+        signals.bullish += 2;
+        reasons.push(`다중 오실레이터 ${agreeing}개 합의 상승 (강도 ${strength.toFixed(0)}%). 강력한 상승 시그널`);
+      } else if (consensus === "상승") {
+        signals.bullish += 1;
+        reasons.push(`다중 오실레이터 합의 상승 (${agreeing}개 동의)`);
+      } else if (consensus === "하락" && agreeing >= 4) {
+        signals.bearish += 2;
+        reasons.push(`다중 오실레이터 ${agreeing}개 합의 하락 (강도 ${strength.toFixed(0)}%). 강력한 하락 시그널`);
+      } else if (consensus === "하락") {
+        signals.bearish += 1;
+        reasons.push(`다중 오실레이터 합의 하락 (${agreeing}개 동의)`);
+      }
+    }
   }
 
   const total = signals.bullish + signals.bearish;
@@ -389,6 +481,72 @@ export function meanReversionModel(data: PriceBar[], advancedSignals?: AdvancedS
         reasons.push(`불리시 다이버전스 감지. 가격은 신저가이나 RSI 상승 중 → 하락 탄력 약화`);
       }
     }
+
+    // ─── 신규 고급 평균회귀 시그널 ───
+
+    // Fibonacci 되돌림 레벨 근접성
+    if (advancedSignals.fibonacciZone) {
+      const { zone, nearLevel, levelName } = advancedSignals.fibonacciZone;
+      if (nearLevel) {
+        if (zone === "지지" || zone === "강한지지") {
+          signals.bullish += 2;
+          reasons.push(`피보나치 ${levelName} 지지 레벨 근접. 반등 가능성 높음`);
+        } else if (zone === "저항" || zone === "강한저항") {
+          signals.bearish += 2;
+          reasons.push(`피보나치 ${levelName} 저항 레벨 근접. 되돌림 가능성 높음`);
+        } else {
+          signals.bullish += 1;
+          reasons.push(`피보나치 ${levelName} 레벨 근접. 가격 반응 가능성`);
+        }
+      }
+    }
+
+    // Pivot Points 지지/저항
+    if (advancedSignals.pivotLevel) {
+      const { nearPivot, zone: pvZone } = advancedSignals.pivotLevel;
+      if (nearPivot) {
+        if (pvZone === "지지") {
+          signals.bullish += 1;
+          reasons.push(`피봇 포인트 지지선 근접. 단기 반등 가능성`);
+        } else if (pvZone === "저항") {
+          signals.bearish += 1;
+          reasons.push(`피봇 포인트 저항선 근접. 단기 조정 가능성`);
+        }
+      }
+    }
+
+    // MFI (Money Flow Index) 과매수/과매도
+    if (advancedSignals.mfiValue != null) {
+      const mfi = advancedSignals.mfiValue;
+      if (mfi > 80) {
+        signals.bearish += 2;
+        reasons.push(`MFI ${mfi.toFixed(1)}로 자금 유입 과열 (과매수). 평균 회귀 하락 가능성`);
+      } else if (mfi > 70) {
+        signals.bearish += 1;
+        reasons.push(`MFI ${mfi.toFixed(1)}로 과매수 접근 중`);
+      } else if (mfi < 20) {
+        signals.bullish += 2;
+        reasons.push(`MFI ${mfi.toFixed(1)}로 자금 유출 과도 (과매도). 평균 회귀 반등 가능성`);
+      } else if (mfi < 30) {
+        signals.bullish += 1;
+        reasons.push(`MFI ${mfi.toFixed(1)}로 과매도 접근 중`);
+      }
+    }
+
+    // Keltner Squeeze (볼린저+켈트너 수축 → 돌파 후 평균회귀)
+    if (advancedSignals.keltnerSqueeze) {
+      const { squeeze, direction: sqDir } = advancedSignals.keltnerSqueeze;
+      if (!squeeze) {
+        // 스퀴즈 해제 후 방향 확인 → 과도한 이탈 시 회귀 가능성
+        if (sqDir === "상승") {
+          signals.bearish += 1;
+          reasons.push(`켈트너 스퀴즈 해제 후 상방 돌파. 과열 시 평균 회귀 하락 주의`);
+        } else if (sqDir === "하락") {
+          signals.bullish += 1;
+          reasons.push(`켈트너 스퀴즈 해제 후 하방 돌파. 과매도 시 평균 회귀 반등 주의`);
+        }
+      }
+    }
   }
 
   const total = signals.bullish + signals.bearish;
@@ -551,6 +709,51 @@ export function volatilityModel(data: PriceBar[], advancedSignals?: AdvancedSign
     if (advancedSignals.volumeProfile.volumeSpike) {
       volatilityScore += 2;
       reasons.push(`거래량 급등 감지. 대규모 시장 참여로 변동성 확대`);
+    }
+
+    // ─── 신규 고급 변동성 시그널 ───
+
+    // Keltner Squeeze (볼린저 밴드가 켈트너 채널 안에 수축)
+    if (advancedSignals.keltnerSqueeze) {
+      const { squeeze, direction: sqDir } = advancedSignals.keltnerSqueeze;
+      if (squeeze) {
+        volatilityScore -= 2;
+        reasons.push(`켈트너 스퀴즈 감지: 볼린저가 켈트너 채널 내부로 수축. 에너지 축적 중, 임박한 돌파 가능성`);
+      } else {
+        volatilityScore += 2;
+        const dir = sqDir === "상승" ? "상방" : sqDir === "하락" ? "하방" : "양방향";
+        reasons.push(`켈트너 스퀴즈 해제: ${dir} 돌파 진행 중. 변동성 급격 확대`);
+      }
+    }
+
+    // Mass Index 반전 시그널 (26 이상 → 26.5 이하 복귀 시 반전)
+    if (advancedSignals.massIndexReversal) {
+      const { bulge, reversalLikely } = advancedSignals.massIndexReversal;
+      if (reversalLikely) {
+        volatilityScore += 3;
+        reasons.push(`Mass Index 반전 불지 완성. 추세 반전에 따른 높은 변동성 예상`);
+      } else if (bulge) {
+        volatilityScore += 1;
+        reasons.push(`Mass Index 불지 진행 중. 변동성 확대 및 추세 반전 가능성 관찰`);
+      }
+    }
+
+    // Volume Confirmation (거래량 확인)
+    if (advancedSignals.volumeConfirmation) {
+      const { divergence } = advancedSignals.volumeConfirmation;
+      if (divergence) {
+        volatilityScore += 1;
+        reasons.push(`가격-거래량 다이버전스 감지. 추세 신뢰도 저하로 변동성 증가 가능`);
+      }
+    }
+
+    // Smart Money Flow (스마트 머니 흐름)
+    if (advancedSignals.smartMoneyFlow) {
+      const { flow, strength } = advancedSignals.smartMoneyFlow;
+      if (strength > 70) {
+        volatilityScore += 1;
+        reasons.push(`스마트 머니 ${flow === "유입" ? "강한 유입" : "강한 유출"} 감지 (강도 ${strength.toFixed(0)}%). 방향성 변동 가능`);
+      }
     }
   }
 
@@ -1007,6 +1210,93 @@ export function fundamentalModel(
         bullishScore += 0.2;
         totalWeight += 0.2;
         reasons.push(`리스크 수준: 낮음. 안정적 투자 환경`);
+      }
+    }
+
+    // ─── 신규 고급 펀더멘털 시그널 ───
+
+    // Volume Confirmation (거래량으로 추세 신뢰도 확인)
+    if (advancedSignals.volumeConfirmation) {
+      const { confirmed, strength } = advancedSignals.volumeConfirmation;
+      if (confirmed && strength > 70) {
+        const currentBias = bullishScore >= bearishScore ? "bullish" : "bearish";
+        const bonus = 0.4;
+        if (currentBias === "bullish") {
+          bullishScore += bonus;
+        } else {
+          bearishScore += bonus;
+        }
+        totalWeight += bonus;
+        reasons.push(`거래량 확인: 현재 추세를 거래량이 강하게 뒷받침 (강도 ${strength.toFixed(0)}%)`);
+      } else if (!confirmed) {
+        reasons.push(`거래량 미확인: 현재 추세에 거래량 뒷받침 부족. 추세 지속 불확실`);
+      }
+    }
+
+    // Smart Money Flow (기관/스마트 머니 흐름)
+    if (advancedSignals.smartMoneyFlow) {
+      const { flow, strength } = advancedSignals.smartMoneyFlow;
+      if (flow === "유입" && strength > 60) {
+        bullishScore += 0.5;
+        totalWeight += 0.5;
+        reasons.push(`스마트 머니 강한 유입 (강도 ${strength.toFixed(0)}%). 기관 매수 세력 확인`);
+      } else if (flow === "유입") {
+        bullishScore += 0.2;
+        totalWeight += 0.2;
+        reasons.push(`스마트 머니 유입 감지. 기관 매수 관심`);
+      } else if (flow === "유출" && strength > 60) {
+        bearishScore += 0.5;
+        totalWeight += 0.5;
+        reasons.push(`스마트 머니 강한 유출 (강도 ${strength.toFixed(0)}%). 기관 매도 세력 확인`);
+      } else if (flow === "유출") {
+        bearishScore += 0.2;
+        totalWeight += 0.2;
+        reasons.push(`스마트 머니 유출 감지. 기관 매도 관심`);
+      }
+    }
+
+    // Multi-Oscillator Consensus (다중 오실레이터 합의로 펀더멘털 방향 확인)
+    if (advancedSignals.multiOscillatorConsensus) {
+      const { consensus, agreeing } = advancedSignals.multiOscillatorConsensus;
+      if (agreeing >= 4) {
+        const bonus = 0.4;
+        if (consensus === "상승") {
+          bullishScore += bonus;
+          totalWeight += bonus;
+          reasons.push(`다중 기술지표 ${agreeing}개 동시 상승 합의. 펀더멘털+기술적 동조 확인`);
+        } else if (consensus === "하락") {
+          bearishScore += bonus;
+          totalWeight += bonus;
+          reasons.push(`다중 기술지표 ${agreeing}개 동시 하락 합의. 펀더멘털+기술적 동조 확인`);
+        }
+      }
+    }
+
+    // Fibonacci Zone (핵심 가격대 위치)
+    if (advancedSignals.fibonacciZone) {
+      const { zone } = advancedSignals.fibonacciZone;
+      if (zone === "강한지지") {
+        bullishScore += 0.3;
+        totalWeight += 0.3;
+        reasons.push(`피보나치 강한 지지대 위치. 가격 하방 경직성 기대`);
+      } else if (zone === "강한저항") {
+        bearishScore += 0.3;
+        totalWeight += 0.3;
+        reasons.push(`피보나치 강한 저항대 위치. 가격 상방 제한 가능`);
+      }
+    }
+
+    // Coppock Curve (장기 경기 사이클 방향)
+    if (advancedSignals.coppockSignal) {
+      const { direction: cDir, turning } = advancedSignals.coppockSignal;
+      if (cDir === "상승" && turning) {
+        bullishScore += 0.5;
+        totalWeight += 0.5;
+        reasons.push(`Coppock Curve 바닥 반전. 장기 경기 사이클 회복 시그널`);
+      } else if (cDir === "하락" && turning) {
+        bearishScore += 0.5;
+        totalWeight += 0.5;
+        reasons.push(`Coppock Curve 고점 반전. 장기 경기 사이클 둔화 시그널`);
       }
     }
   }

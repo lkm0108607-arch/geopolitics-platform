@@ -60,8 +60,8 @@ const MODELS: ModelInfo[] = [
     borderColor: "border-blue-500/30",
     bgColor: "bg-blue-500/10",
     description:
-      "SMA, EMA, RSI, MACD 등 추세 추종 지표를 활용하여 현재 시장의 추세 강도와 방향성을 분석합니다. 강한 상승/하락 모멘텀을 감지하면 추세 지속 가능성을 높게 평가합니다.",
-    indicators: ["SMA (단순이동평균)", "EMA (지수이동평균)", "RSI (상대강도지수)", "MACD (이동평균수렴확산)"],
+      "SMA, EMA, RSI, MACD 등 기본 추세 지표에 Aroon, TRIX, Elder Ray, Coppock Curve, ADX, Stochastic, Parabolic SAR 등 22개 이상의 모멘텀 지표를 종합 분석합니다. 멀티타임프레임 추세 정렬과 다중 오실레이터 합의 시스템으로 노이즈를 필터링합니다.",
+    indicators: ["SMA/EMA (이동평균)", "RSI/MACD", "Stochastic/ADX", "Parabolic SAR", "Aroon 추세", "TRIX (삼중지수)", "Elder Ray (매수/매도세력)", "Coppock Curve (장기사이클)", "멀티오실레이터 합의"],
   },
   {
     key: "meanReversion",
@@ -73,8 +73,8 @@ const MODELS: ModelInfo[] = [
     borderColor: "border-amber-500/30",
     bgColor: "bg-amber-500/10",
     description:
-      "볼린저 밴드와 RSI 극단값을 통해 과매수/과매도 상태를 식별합니다. 가격이 평균에서 크게 벗어났을 때 복귀 가능성을 예측합니다.",
-    indicators: ["볼린저 밴드 (상단/하단)", "RSI 극단값 (30 이하 / 70 이상)", "Z-Score", "표준편차 채널"],
+      "볼린저 밴드, RSI, Williams %R, CCI 등 오실레이터와 피보나치 되돌림, 피봇 포인트, MFI, 켈트너 채널 스퀴즈를 종합하여 과매수/과매도를 정밀 판별합니다. 모멘텀 다이버전스와 가격-거래량 괴리도 탐지합니다.",
+    indicators: ["볼린저 밴드", "RSI/Williams %R/CCI", "피보나치 되돌림", "피봇 포인트", "MFI (자금흐름지수)", "켈트너 스퀴즈", "모멘텀 다이버전스", "지지/저항선 분석"],
   },
   {
     key: "volatility",
@@ -86,8 +86,8 @@ const MODELS: ModelInfo[] = [
     borderColor: "border-rose-500/30",
     bgColor: "bg-rose-500/10",
     description:
-      "ATR(Average True Range) 분석과 변동성 레짐 탐지를 통해 시장 변동성의 현재 상태와 향후 변화를 예측합니다. 변동성 확대/축소 구간을 구분합니다.",
-    indicators: ["ATR (평균진폭)", "변동성 레짐 탐지", "역사적 변동성", "내재 변동성 비교"],
+      "ATR, 볼린저 밴드 폭에 켈트너 채널 스퀴즈, Mass Index 반전 시그널, 거래량 확인, 스마트 머니 흐름을 결합한 다차원 변동성 분석을 수행합니다. 변동성 레짐을 5단계로 분류하고 돌파 확률을 산출합니다.",
+    indicators: ["ATR (평균진폭)", "볼린저 밴드 폭", "켈트너 스퀴즈", "Mass Index 반전", "거래량 확인", "스마트 머니 흐름", "변동성 레짐 분류", "돌파 확률 분석"],
   },
   {
     key: "correlation",
@@ -99,8 +99,8 @@ const MODELS: ModelInfo[] = [
     borderColor: "border-purple-500/30",
     bgColor: "bg-purple-500/10",
     description:
-      "20개 주요 자산 페어 간의 교차상관 분석을 수행합니다. 상관관계 변화와 디커플링 현상을 감지하여 시장 구조적 변화를 포착합니다.",
-    indicators: ["20개 자산 페어 상관분석", "롤링 상관계수", "디커플링 감지", "리드-래그 분석"],
+      "30개 이상의 주요 자산 페어 간의 교차상관 분석을 수행합니다. 글로벌 매크로(DXY, 금리, 원자재), 한국 ETF 섹터, VIX 위험회피 상관관계를 종합하여 시장 구조적 변화를 포착합니다.",
+    indicators: ["30+ 자산 페어 상관분석", "DXY/금리/원자재 연계", "섹터 ETF 상관관계", "VIX 위험회피 상관", "리드-래그 분석", "상관 레짐 변화 감지"],
   },
   {
     key: "fundamental",
@@ -112,8 +112,8 @@ const MODELS: ModelInfo[] = [
     borderColor: "border-emerald-500/30",
     bgColor: "bg-emerald-500/10",
     description:
-      "VIX 공포지수, 수익률 곡선, 원자재 비율, 뉴스 감성 분석 등 거시경제 지표와 시장 심리를 종합적으로 분석합니다.",
-    indicators: ["VIX (공포지수)", "수익률 곡선 (Yield Curve)", "원자재 비율 분석", "뉴스 감성 분석"],
+      "VIX, 수익률 곡선, 원자재 비율, 뉴스 감성에 Fear & Greed 종합지수, 스마트 머니 흐름, 거래량 프로파일, Sharpe 비율, Coppock 장기 경기 사이클을 통합한 종합 매크로 분석을 수행합니다.",
+    indicators: ["VIX (공포지수)", "수익률 곡선", "구리/금 비율", "뉴스 감성 분석", "Fear & Greed 지수", "스마트 머니 흐름", "거래량 프로파일", "Sharpe 비율", "Coppock 장기사이클"],
   },
 ];
 
@@ -155,13 +155,13 @@ const LEARNING_STEPS = [
   {
     step: 5,
     title: "딥 진단 + 강화 학습",
-    description: "지표 세팅, 데이터 반영, 감도, 구조적 한계까지 근본 원인을 분석하고 서브모델, AI 토론, AI 배심원 모두 개선합니다.",
+    description: "38개 이상의 기술적 지표를 교차검증하며, 지표 세팅, 데이터 반영, 감도, 구조적 한계까지 근본 원인을 분석합니다. 적응형 학습률로 시장 상황에 맞는 최적 보정을 수행합니다.",
     icon: <Search className="w-6 h-6" />,
   },
   {
     step: 6,
     title: "가중치 + 전문성 조정",
-    description: "분석 결과를 바탕으로 모델 가중치, AI 배심원 신뢰도, AI 토론 전략을 동적으로 조정합니다.",
+    description: "시장 레짐 인식 가중치 조정, 모델 시너지 분석, 성과 추세 추적으로 모델 가중치, AI 배심원 신뢰도, AI 토론 전략을 지능적으로 조정합니다.",
     icon: <RefreshCw className="w-6 h-6" />,
   },
 ];
@@ -175,6 +175,8 @@ export default function AISystemPage() {
   const isLoading = historyLoading || predictionsLoading;
   const [modelSortBy, setModelSortBy] = useState<"default" | "weight" | "upVotes" | "avgConf">("default");
   const [logSortBy, setLogSortBy] = useState<"latest" | "oldest">("latest");
+  const [showAllWeights, setShowAllWeights] = useState(false);
+  const [showAllLogs, setShowAllLogs] = useState(false);
 
   // Get current weights (latest from history or defaults)
   const currentWeights = useMemo(() => {
@@ -254,10 +256,10 @@ export default function AISystemPage() {
             GeoInsight AI 예측 시스템
           </h1>
           <p className="text-slate-400 text-base md:text-lg max-w-3xl mx-auto leading-relaxed">
-            5개의 독립적인 서브모델이 시장을 다각도로 분석하고,
+            5개의 독립적인 서브모델이 38개 이상의 기술적 지표와 종합 매크로 분석으로 시장을 다각도로 분석하고,
             12라운드 AI 토론과 30인 전문 AI 배심원 심의를 거쳐 최종 예측을 도출합니다.
-            5단계 역사적 패턴 분석, 호재/악재 촉매 분석, 딥 진단 학습 시스템으로
-            매 사이클마다 자체 진화합니다.
+            5단계 역사적 패턴 분석, 적응형 강화학습, 메타러닝 시스템으로
+            매 사이클마다 자체 진화하며 시장 레짐에 동적으로 적응합니다.
           </p>
         </div>
       </section>
@@ -419,12 +421,12 @@ export default function AISystemPage() {
 
         {/* ── Model Cards ── */}
         <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+            <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <Layers className="w-5 h-5 text-purple-400" />
               5개 서브모델 상세
             </h2>
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <ArrowUpDown className="w-3.5 h-3.5 text-slate-500" />
               {(["default", "weight", "upVotes", "avgConf"] as const).map((key) => {
                 const labels: Record<typeof key, string> = { default: "기본", weight: "가중치", upVotes: "상승투표", avgConf: "평균신뢰도" };
@@ -594,17 +596,13 @@ export default function AISystemPage() {
               <div>
                 <p className="text-slate-300 font-medium mb-1">딥 진단 학습 시스템</p>
                 <p>
-                  단순 가중치 조정을 넘어, 각 모델의 기술적 지표 세팅, 데이터 반영 오류,
-                  감도 문제, 구조적 한계까지 6가지 카테고리로 근본 원인을 분석합니다.
-                  심각도(심각/주의/경미)에 비례한 정밀 보정을 수행합니다.
+                  38개 이상의 기술적 지표(피보나치, 켈트너, Aroon, TRIX, Elder Ray, MFI 등)를 활용한 교차검증으로 오진단을 최소화합니다. 6가지 카테고리 × 3단계 심각도의 정밀 진단과 적응형 학습률이 시장 상황에 맞는 최적 보정을 수행합니다.
                 </p>
               </div>
               <div>
                 <p className="text-slate-300 font-medium mb-1">3중 학습 구조</p>
                 <p>
-                  서브모델 가중치 조정, AI 토론 전략 개선(신뢰도 재조정, 공격/방어 성공률 분석),
-                  AI 배심원 전문성 강화(정확도 기반 신뢰도 업데이트, 전문 영역 초점 재조정)가
-                  동시에 이루어집니다.
+                  서브모델 가중치 조정(적응형 학습률 + 모멘텀 기반), AI 토론 전략 개선(공격/방어 성공률 기반), AI 배심원 전문성 강화가 동시에 이루어집니다. 메타러닝으로 모델 시너지를 분석하고, 성과 추세를 추적하여 장기적 개선을 보장합니다.
                 </p>
               </div>
             </div>
@@ -612,75 +610,77 @@ export default function AISystemPage() {
         </section>
 
         {/* ── Current Model Weights (from history) ── */}
-        {weightHistory.length > 0 && (
+        {weightHistory.length > 0 && (() => {
+          const displayedWeights = weightHistory.slice(-10).reverse();
+          const visibleWeights = showAllWeights ? displayedWeights : displayedWeights.slice(0, 5);
+          return (
           <section>
-            <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
+            <h2 className="text-lg sm:text-xl font-bold text-white mb-4 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-purple-400" />
               가중치 변화 이력
             </h2>
 
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-700/60 bg-slate-800/50">
-                      <th className="text-left px-4 py-3 text-slate-400 font-medium">사이클</th>
-                      <th className="text-left px-4 py-3 text-slate-400 font-medium">일시</th>
-                      {MODELS.map((m) => (
-                        <th key={m.key} className={`text-center px-3 py-3 font-medium ${m.color}`}>
-                          {m.name}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {weightHistory.slice(-10).reverse().map((entry, idx) => (
-                      <tr
-                        key={entry.cycleId}
-                        className={`border-b border-slate-800/50 ${idx === 0 ? "bg-purple-500/5" : "hover:bg-slate-800/30"} transition-colors`}
-                      >
-                        <td className="px-4 py-2.5 text-slate-300 font-mono">
-                          {entry.cycleId}
-                          {idx === 0 && (
-                            <span className="ml-2 text-[10px] text-purple-400 font-sans">(최신)</span>
-                          )}
-                        </td>
-                        <td className="px-4 py-2.5 text-slate-500">
-                          {new Date(entry.timestamp).toLocaleString("ko-KR", {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })}
-                        </td>
-                        {MODELS.map((m) => {
-                          const w = entry.weights[m.key];
-                          const defaultW = DEFAULT_WEIGHTS[m.key];
-                          const diff = w != null && defaultW != null ? w - defaultW : 0;
-                          return (
-                            <td key={m.key} className="text-center px-3 py-2.5 font-mono text-slate-300">
-                              {w != null ? `${w}%` : "-"}
-                              {diff !== 0 && (
-                                <span className={`ml-1 text-[10px] ${diff > 0 ? "text-emerald-400" : "text-rose-400"}`}>
-                                  {diff > 0 ? "+" : ""}{diff}
-                                </span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              {visibleWeights.map((entry, idx) => {
+                // 변동이 있는 모델만 표시
+                const changes = MODELS.map((m) => {
+                  const w = entry.weights[m.key];
+                  const defaultW = DEFAULT_WEIGHTS[m.key];
+                  const diff = w != null && defaultW != null ? w - defaultW : 0;
+                  return { ...m, w, diff };
+                }).filter((m) => m.diff !== 0);
+
+                return (
+                  <div
+                    key={entry.cycleId}
+                    className={`flex items-center gap-3 px-4 py-2.5 ${idx !== visibleWeights.length - 1 ? "border-b border-slate-800/60" : ""} ${idx === 0 ? "bg-purple-500/5" : ""}`}
+                  >
+                    {/* 날짜 */}
+                    <span className="text-[11px] text-slate-500 w-16 shrink-0">
+                      {new Date(entry.timestamp).toLocaleDateString("ko-KR", {
+                        month: "numeric", day: "numeric",
+                      })}
+                    </span>
+
+                    {/* 변동 내역 */}
+                    <div className="flex flex-wrap gap-x-2.5 gap-y-0.5 flex-1 min-w-0">
+                      {changes.length > 0 ? changes.map((m) => (
+                        <span key={m.key} className="text-[11px] flex items-center gap-1">
+                          <span className={`${m.color} opacity-60`}>{m.name}</span>
+                          <span className={`font-mono font-medium ${m.diff > 0 ? "text-emerald-400" : "text-rose-400"}`}>
+                            {m.diff > 0 ? "▲" : "▼"}{Math.abs(m.diff)}
+                          </span>
+                        </span>
+                      )) : (
+                        <span className="text-[11px] text-slate-600">변동 없음</span>
+                      )}
+                    </div>
+
+                    {/* 최신 뱃지 */}
+                    {idx === 0 && (
+                      <span className="text-[9px] text-purple-400 bg-purple-500/15 rounded px-1.5 py-0.5 shrink-0">최신</span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
+
+            {displayedWeights.length > 5 && (
+              <button
+                onClick={() => setShowAllWeights(!showAllWeights)}
+                className="mt-3 w-full py-2 text-xs text-purple-400 hover:text-purple-300 bg-slate-800/40 rounded-lg border border-slate-700/40 transition"
+              >
+                {showAllWeights ? "접기" : `더보기 (${displayedWeights.length - 5}개 더)`}
+              </button>
+            )}
           </section>
-        )}
+          );
+        })()}
 
         {/* ── Learning Logs ── */}
         <section>
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
               <BookOpen className="w-5 h-5 text-purple-400" />
               최근 학습 기록
             </h2>
@@ -708,51 +708,48 @@ export default function AISystemPage() {
               <p className="text-sm text-slate-500">아직 학습 기록이 없습니다</p>
               <p className="text-xs text-slate-600 mt-1">파이프라인이 실행되면 AI가 예측 결과를 평가하고 학습 기록을 남깁니다.</p>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {sortedLogs.map((log, idx) => (
-                <div
-                  key={`${log.cycleId}-${log.timestamp}`}
-                  className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-5 hover:border-purple-500/30 transition-colors"
-                >
-                  {/* 헤더: 사이클 + 날짜 */}
-                  <div className="flex items-center gap-2 mb-3">
-                    <span className="text-[10px] font-mono text-purple-300 bg-purple-500/15 rounded px-1.5 py-0.5">
-                      {log.cycleId}
-                    </span>
-                    <span className="text-[10px] text-slate-500">
-                      {new Date(log.timestamp).toLocaleDateString("ko-KR", {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })}
-                    </span>
-                    <span className="text-[10px] text-slate-600 ml-auto">#{sortedLogs.length - idx}</span>
-                  </div>
-
-                  {/* AI 회고 내용 */}
-                  <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/30">
-                    <div className="flex items-start gap-2">
-                      <Brain className="w-3.5 h-3.5 text-purple-400 mt-0.5 flex-shrink-0" />
-                      <div className="space-y-1.5 min-w-0">
-                        {log.reason && (
-                          <p className="text-xs text-slate-300 leading-relaxed">
-                            {log.reason}
-                          </p>
-                        )}
-                        {log.adjustments && (
-                          <p className="text-[11px] text-slate-500 leading-relaxed">
-                            <span className="text-purple-400/70">가중치 변동:</span>{" "}
-                            {log.adjustments}
-                          </p>
-                        )}
-                      </div>
+          ) : (() => {
+            const visibleLogs = showAllLogs ? sortedLogs : sortedLogs.slice(0, 5);
+            return (
+            <div>
+              <div className="space-y-2">
+                {visibleLogs.map((log, idx) => (
+                  <div
+                    key={`${log.cycleId}-${log.timestamp}`}
+                    className="rounded-lg border border-slate-700/60 bg-slate-900/70 p-3 hover:border-purple-500/30 transition-colors"
+                  >
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <Brain className="w-3 h-3 text-purple-400 flex-shrink-0" />
+                      <span className="text-[10px] font-mono text-purple-300 bg-purple-500/15 rounded px-1.5 py-0.5">
+                        {log.cycleId}
+                      </span>
+                      <span className="text-[10px] text-slate-500">
+                        {new Date(log.timestamp).toLocaleDateString("ko-KR", {
+                          month: "short", day: "numeric",
+                        })}
+                      </span>
+                      <span className="text-[10px] text-slate-600 ml-auto">#{sortedLogs.length - idx}</span>
                     </div>
+                    {log.reason && (
+                      <p className="text-[11px] text-slate-400 leading-relaxed line-clamp-2 pl-5">
+                        {log.reason}
+                      </p>
+                    )}
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
+
+              {sortedLogs.length > 5 && (
+                <button
+                  onClick={() => setShowAllLogs(!showAllLogs)}
+                  className="mt-3 w-full py-2 text-xs text-purple-400 hover:text-purple-300 bg-slate-800/40 rounded-lg border border-slate-700/40 transition"
+                >
+                  {showAllLogs ? "접기" : `더보기 (${sortedLogs.length - 5}개 더)`}
+                </button>
+              )}
             </div>
-          )}
+            );
+          })()}
         </section>
 
         {/* ── Technical Details ── */}
@@ -784,6 +781,10 @@ export default function AISystemPage() {
                 <li className="flex items-start gap-2">
                   <span className="text-purple-400 mt-0.5">*</span>
                   <span>AI 배심원 불신 판정 시 신뢰도 40% 하향 보정</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-purple-400 mt-0.5">*</span>
+                  <span>적응형 학습률 + 모멘텀 기반 가중치 최적화로 시장 레짐 전환에 동적 적응</span>
                 </li>
               </ul>
             </div>
@@ -875,7 +876,7 @@ export default function AISystemPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">*</span>
-                  <span>22개 고급 기술적 지표 (ADX, Parabolic SAR, Stochastic, Ichimoku 등)</span>
+                  <span>38개 이상 기술적 지표 (Fibonacci, Keltner, Aroon, TRIX, Elder Ray, MFI, Coppock, Mass Index 등)</span>
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">*</span>
@@ -883,7 +884,7 @@ export default function AISystemPage() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-emerald-400 mt-0.5">*</span>
-                  <span>교차상관 매트릭스 (20개 자산 페어)</span>
+                  <span>교차상관 매트릭스 (30개 이상 자산 페어)</span>
                 </li>
               </ul>
             </div>
@@ -909,6 +910,39 @@ export default function AISystemPage() {
                 <li className="flex items-start gap-2">
                   <span className="text-amber-400 mt-0.5">*</span>
                   <span>토론 전략 개선 + AI 배심원 전문성 강화 동시 수행</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-400 mt-0.5">*</span>
+                  <span>적응형 학습률: 정확도/변동성/학습모멘텀에 따른 동적 학습 속도 조정</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-amber-400 mt-0.5">*</span>
+                  <span>메타러닝: 모델 시너지 분석 + 성과 추세 추적 + 시장 레짐별 최적 모델 조합 학습</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 p-5">
+              <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-rose-400" />
+                강화학습 엔진
+              </h3>
+              <ul className="space-y-2 text-xs text-slate-400">
+                <li className="flex items-start gap-2">
+                  <span className="text-rose-400 mt-0.5">*</span>
+                  <span>적응형 학습률: 정확도, 시장 변동성, 학습 모멘텀에 따라 학습 속도 자동 조절</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-rose-400 mt-0.5">*</span>
+                  <span>시장 레짐 인식: 추세/횡보/고변동 시장별 모델 가중치 자동 최적화</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-rose-400 mt-0.5">*</span>
+                  <span>모델 시너지 분석: 최적 모델 조합 학습 및 상충 모델 감지</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-rose-400 mt-0.5">*</span>
+                  <span>메타러닝: 실패 패턴 분류, 성과 추세 추적, 자기 개선 속도 모니터링</span>
                 </li>
               </ul>
             </div>

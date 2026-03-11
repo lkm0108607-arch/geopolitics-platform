@@ -138,7 +138,17 @@ export async function savePrediction(prediction: {
   confidence: number;
   rationale: string;
   subModelVotes: SubModelVotes;
+  timingPrediction?: unknown;
+  debateResult?: unknown;
+  juryVerdict?: unknown;
 }): Promise<AIPredictionRow> {
+  // timingPrediction, debateResult, juryVerdict를 sub_model_votes JSON에 함께 저장
+  const extendedVotes = {
+    ...(prediction.subModelVotes as unknown as Record<string, unknown>),
+    ...(prediction.timingPrediction ? { timingPrediction: prediction.timingPrediction } : {}),
+    ...(prediction.debateResult ? { debateResult: prediction.debateResult } : {}),
+    ...(prediction.juryVerdict ? { juryVerdict: prediction.juryVerdict } : {}),
+  };
   const row = {
     cycle_id: prediction.cycleId,
     asset_id: prediction.assetId,
@@ -146,7 +156,7 @@ export async function savePrediction(prediction: {
     probability: prediction.probability,
     confidence: prediction.confidence,
     rationale: prediction.rationale,
-    sub_model_votes: prediction.subModelVotes as unknown as Record<string, unknown>,
+    sub_model_votes: extendedVotes,
   };
 
   // 같은 cycle_id + asset_id 조합이 이미 있으면 덮어쓰기 (중복 방지)

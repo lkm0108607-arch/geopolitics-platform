@@ -29,6 +29,7 @@ import { etfRecommendations, type ETFRecommendation } from "@/data/investmentStr
 import { koreanETFs, getETFByTicker, searchETFs, etfCategories, type KoreanETF } from "@/data/koreanETFs";
 import { useTranslation } from "@/components/LanguageProvider";
 import { formatCurrency, formatNumber } from "@/lib/localeUnits";
+import { useAIPredictions } from "@/hooks/useAIPredictions";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -257,10 +258,19 @@ function ETFChart({ ticker, range, interval }: { ticker: string; range: string; 
 
 export default function SimulationPage() {
   const { locale, t } = useTranslation();
+  const { predictions } = useAIPredictions();
+
+  // AI 예측에서 상승 예측된 ETF 종목만 별표 표시
+  const aiRecommendedTickers = new Set(
+    predictions
+      .filter((p) => p.assetId.startsWith("etf-") && p.direction === "상승")
+      .map((p) => p.assetId.replace("etf-", ""))
+  );
+
   const [hydrated, setHydrated] = useState(false);
   const [users, setUsers] = useState<Record<string, SimUser>>({});
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [mode, setMode] = useState<"login" | "register">("login");
+  const [mode, setMode] = useState<"login" | "register" | "findPw">("login");
   const [userId, setUserId] = useState("");
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
@@ -291,6 +301,16 @@ export default function SimulationPage() {
   const [newNickname, setNewNickname] = useState("");
   const [profileEditError, setProfileEditError] = useState("");
   const [profileEditSuccess, setProfileEditSuccess] = useState("");
+
+  // Password recovery
+  const [findPwUserId, setFindPwUserId] = useState("");
+  const [findPwNickname, setFindPwNickname] = useState("");
+  const [foundPassword, setFoundPassword] = useState<string | null>(null);
+
+  // Password change (in profile modal)
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
 
   // Mobile ETF dropdown
   const [showETFList, setShowETFList] = useState(false);
@@ -375,7 +395,7 @@ export default function SimulationPage() {
 
   // Filtered ETF list
   const filteredETFs = koreanETFs.filter((etf) => {
-    if (showRecommendedOnly && !etf.isRecommended) return false;
+    if (showRecommendedOnly && !aiRecommendedTickers.has(etf.ticker)) return false;
     if (etfCategory !== "전체" && etf.category !== etfCategory) return false;
     if (etfSearch.trim()) {
       const q = etfSearch.toLowerCase();
@@ -420,6 +440,40 @@ export default function SimulationPage() {
     if (found.password !== password.trim()) { setError("비밀번호가 일치하지 않습니다."); return; }
     setUsers(u); setCurrentUser(userId.trim()); setSession(userId.trim());
     setError(""); setUserId(""); setNickname(""); setPassword("");
+  }
+
+  // ─── Password Recovery ──────────────────────────────────────────────────────
+
+  function handleFindPassword() {
+    if (!findPwUserId.trim()) { setError("아이디를 입력해주세요."); return; }
+    if (!findPwNickname.trim()) { setError("닉네임을 입력해주세요."); return; }
+    const u = loadUsers();
+    const found = u[findPwUserId.trim()];
+    if (!found) { setError("등록되지 않은 아이디입니다."); setFoundPassword(null); return; }
+    if (found.nickname !== findPwNickname.trim()) { setError("닉네임이 일치하지 않습니다."); setFoundPassword(null); return; }
+    setError("");
+    setFoundPassword(found.password);
+  }
+
+  // ─── Password Change ──────────────────────────────────────────────────────
+
+  function handleChangePassword() {
+    if (!currentUser) return;
+    if (!currentPassword.trim()) { setProfileEditError("현재 비밀번호를 입력해주세요."); return; }
+    if (!newPassword.trim() || newPassword.trim().length < 4) { setProfileEditError("새 비밀번호는 4자 이상이어야 합니다."); return; }
+    if (newPassword.trim() !== confirmPassword.trim()) { setProfileEditError("새 비밀번호가 일치하지 않습니다."); return; }
+    const u = loadUsers();
+    const userData = u[currentUser];
+    if (!userData) return;
+    if (userData.password !== currentPassword.trim()) { setProfileEditError("현재 비밀번호가 틀렸습니다."); return; }
+    if (userData.password === newPassword.trim()) { setProfileEditError("현재와 동일한 비밀번호입니다."); return; }
+    u[currentUser] = { ...userData, password: newPassword.trim() };
+    saveUsers(u);
+    setUsers(u);
+    setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+    setProfileEditError("");
+    setProfileEditSuccess("비밀번호가 변경되었습니다.");
+    setTimeout(() => setProfileEditSuccess(""), 2000);
   }
 
   // ─── Profile Edit ──────────────────────────────────────────────────────────
@@ -589,9 +643,38 @@ export default function SimulationPage() {
             </div>
           </div>
           <div className="flex mb-6 bg-slate-800 rounded-lg p-1">
-            <button onClick={() => { setMode("login"); setError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "login" ? "bg-blue-600 text-white" : "text-slate-400"}`}>{t.simulation.login}</button>
-            <button onClick={() => { setMode("register"); setError(""); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "register" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>{t.simulation.register}</button>
+            <button onClick={() => { setMode("login"); setError(""); setFoundPassword(null); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "login" ? "bg-blue-600 text-white" : "text-slate-400"}`}>{t.simulation.login}</button>
+            <button onClick={() => { setMode("register"); setError(""); setFoundPassword(null); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "register" ? "bg-emerald-600 text-white" : "text-slate-400"}`}>{t.simulation.register}</button>
+            <button onClick={() => { setMode("findPw"); setError(""); setFoundPassword(null); }} className={`flex-1 py-2 text-sm font-medium rounded-md transition-colors ${mode === "findPw" ? "bg-amber-600 text-white" : "text-slate-400"}`}>비밀번호 찾기</button>
           </div>
+
+          {/* 비밀번호 찾기 모드 */}
+          {mode === "findPw" ? (
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />아이디</label>
+                <input type="text" value={findPwUserId} onChange={(e) => { setFindPwUserId(e.target.value); setFoundPassword(null); }} placeholder="가입 시 사용한 아이디" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500" onKeyDown={(e) => e.key === "Enter" && handleFindPassword()} />
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />닉네임</label>
+                <input type="text" value={findPwNickname} onChange={(e) => { setFindPwNickname(e.target.value); setFoundPassword(null); }} placeholder="가입 시 등록한 닉네임" className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500" onKeyDown={(e) => e.key === "Enter" && handleFindPassword()} />
+              </div>
+              {error && <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/30 rounded-lg px-3 py-2">{error}</p>}
+              {foundPassword && (
+                <div className="bg-emerald-900/20 border border-emerald-800/30 rounded-lg p-3">
+                  <p className="text-xs text-emerald-300 mb-1">비밀번호를 찾았습니다:</p>
+                  <p className="text-sm font-bold text-white font-mono bg-slate-800 px-3 py-2 rounded">{foundPassword}</p>
+                </div>
+              )}
+              <button onClick={handleFindPassword} className="w-full py-3 rounded-lg text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white transition-colors">
+                비밀번호 찾기
+              </button>
+              <button onClick={() => { setMode("login"); setError(""); setFoundPassword(null); }} className="w-full py-2 text-xs text-slate-400 hover:text-white transition-colors">
+                로그인으로 돌아가기
+              </button>
+            </div>
+          ) : (
+          /* 로그인 / 회원가입 모드 */
           <div className="space-y-4">
             <div>
               <label className="block text-xs text-slate-400 mb-1.5"><User className="w-3 h-3 inline mr-1" />{t.simulation.userId}</label>
@@ -611,7 +694,13 @@ export default function SimulationPage() {
             <button onClick={mode === "login" ? handleLogin : handleRegister} className={`w-full py-3 rounded-lg text-sm font-bold transition-colors ${mode === "login" ? "bg-blue-600 hover:bg-blue-500 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white"}`}>
               {mode === "login" ? t.simulation.login : t.simulation.registerBonus}
             </button>
+            {mode === "login" && (
+              <button onClick={() => { setMode("findPw"); setError(""); }} className="w-full py-2 text-xs text-slate-400 hover:text-amber-400 transition-colors">
+                비밀번호를 잊으셨나요?
+              </button>
+            )}
           </div>
+          )}
           {mode === "register" && (
             <div className="mt-4 bg-emerald-900/15 border border-emerald-800/25 rounded-lg p-3">
               <p className="text-xs text-emerald-300 leading-relaxed">회원가입 시 <strong>{formatCurrency(10000000, locale as any)}</strong> 모의투자 자금이 지급됩니다. 국내 상장 ETF {koreanETFs.length}종 전체를 매매할 수 있습니다.</p>
@@ -671,14 +760,48 @@ export default function SimulationPage() {
                 />
               </div>
 
-              {/* Password field (read-only) */}
-              <div>
-                <label className="block text-xs text-slate-400 mb-1.5">
-                  <Lock className="w-3 h-3 inline mr-1" />{t.simulation.passwordReadonly}
+              {/* 닉네임 변경 버튼 */}
+              <button
+                onClick={handleUpdateNickname}
+                className="w-full py-2.5 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+              >
+                {t.simulation.changeNickname}
+              </button>
+
+              {/* 비밀번호 변경 섹션 */}
+              <div className="border-t border-slate-700/50 pt-4 mt-2">
+                <label className="block text-xs text-slate-400 mb-3 font-medium">
+                  <Lock className="w-3 h-3 inline mr-1" />비밀번호 변경
                 </label>
-                <div className="w-full bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-2.5 text-sm text-slate-500 flex items-center gap-2 cursor-not-allowed">
-                  <Lock className="w-3 h-3 text-slate-600" />
-                  <span>••••••••</span>
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(e) => { setCurrentPassword(e.target.value); setProfileEditError(""); setProfileEditSuccess(""); }}
+                    placeholder="현재 비밀번호"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => { setNewPassword(e.target.value); setProfileEditError(""); setProfileEditSuccess(""); }}
+                    placeholder="새 비밀번호 (4자 이상)"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                  />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(e) => { setConfirmPassword(e.target.value); setProfileEditError(""); setProfileEditSuccess(""); }}
+                    placeholder="새 비밀번호 확인"
+                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                    onKeyDown={(e) => e.key === "Enter" && handleChangePassword()}
+                  />
+                  <button
+                    onClick={handleChangePassword}
+                    className="w-full py-2.5 rounded-lg text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+                  >
+                    비밀번호 변경
+                  </button>
                 </div>
               </div>
 
@@ -688,13 +811,6 @@ export default function SimulationPage() {
               {profileEditSuccess && (
                 <p className="text-xs text-emerald-400 bg-emerald-900/20 border border-emerald-800/30 rounded-lg px-3 py-2">{profileEditSuccess}</p>
               )}
-
-              <button
-                onClick={handleUpdateNickname}
-                className="w-full py-2.5 rounded-lg text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
-              >
-                {t.simulation.changeNickname}
-              </button>
             </div>
           </div>
         </div>
@@ -725,7 +841,7 @@ export default function SimulationPage() {
             </span>
           </div>
           <button
-            onClick={() => { setShowProfileEdit(true); setNewNickname(user?.nickname || ""); setProfileEditError(""); setProfileEditSuccess(""); }}
+            onClick={() => { setShowProfileEdit(true); setNewNickname(user?.nickname || ""); setProfileEditError(""); setProfileEditSuccess(""); setCurrentPassword(""); setNewPassword(""); setConfirmPassword(""); }}
             className="flex items-center gap-1.5 text-sm text-slate-300 bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-700 hover:border-blue-500 transition-colors"
           >
             <User className="w-3 h-3 text-blue-400" />{user?.nickname || currentUser}
@@ -834,7 +950,7 @@ export default function SimulationPage() {
                       <div className="flex items-center justify-between">
                         <div className="min-w-0">
                           <p className={`text-sm font-medium truncate ${isSelected ? "text-blue-300" : "text-white"}`}>
-                            {etf.isRecommended && <Star className="w-3 h-3 text-amber-400 inline mr-1 -mt-0.5" />}
+                            {aiRecommendedTickers.has(etf.ticker) && <Star className="w-3 h-3 text-amber-400 inline mr-1 -mt-0.5" />}
                             {etf.nameKr}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5">
@@ -877,7 +993,7 @@ export default function SimulationPage() {
               <div className="flex items-start justify-between mb-2">
                 <div>
                   <h2 className="text-lg font-bold text-white">
-                    {selectedETFData?.isRecommended && <Star className="w-4 h-4 text-amber-400 inline mr-1 -mt-1" />}
+                    {aiRecommendedTickers.has(selectedETF) && <Star className="w-4 h-4 text-amber-400 inline mr-1 -mt-1" />}
                     {selectedETFData?.nameKr || getETFName(selectedETF)}
                   </h2>
                   <p className="text-xs text-slate-500">{selectedETFData?.name || selectedETF} · {selectedETF} · {selectedETFData?.provider} · {selectedETFData?.category}</p>

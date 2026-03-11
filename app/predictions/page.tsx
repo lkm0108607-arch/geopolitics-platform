@@ -57,7 +57,6 @@ function getCategoryForPrediction(pred: AIPrediction): FilterTab {
   const asset = getAssetById(pred.assetId);
   if (!asset) return "전체";
   const cat = asset.category;
-  if (cat === "산업") return "지수";
   return cat as FilterTab;
 }
 

@@ -291,7 +291,13 @@ export default function InvestmentPage() {
   const [sortBy, setSortBy] = useState<"signal" | "return" | "risk" | "timing" | "name">("signal");
 
   const solutions = useMemo(
-    () => predictions.map(buildSolution).sort((a, b) => {
+    () => predictions
+      .filter((p) => p.assetId.startsWith("etf-"))             // ETF만 표시 (지수·금리·환율·원자재 제외)
+      .filter((p) => {                                          // 이름이 해결된 종목만
+        const asset = getAssetById(p.assetId);
+        return asset && asset.name !== p.assetId;
+      })
+      .map(buildSolution).sort((a, b) => {
       switch (sortBy) {
         case "return":
           return Math.abs(b.targetReturnNum) - Math.abs(a.targetReturnNum);
@@ -455,8 +461,8 @@ export default function InvestmentPage() {
                   <thead>
                     <tr className="text-slate-500 text-xs border-b border-slate-800">
                       <th className="text-left px-5 py-3 font-medium">종목</th>
-                      <th className="text-right px-3 py-3 font-medium">현재가</th>
-                      <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">익절가</th>
+                      <th className="text-right px-3 py-3 font-medium">매수진입가</th>
+                      <th className="text-center px-3 py-3 font-medium hidden sm:table-cell">익절 목표가</th>
                       <th className="text-center px-3 py-3 font-medium hidden md:table-cell">손절가</th>
                       <th className="text-center px-3 py-3 font-medium">기대수익</th>
                       <th className="text-center px-3 py-3 font-medium hidden lg:table-cell">매도시점</th>
@@ -940,6 +946,7 @@ const exitReasonStyle: Record<string, { bg: string; text: string; icon: string }
   "익절": { bg: "bg-emerald-500/15", text: "text-emerald-400", icon: "💰" },
   "손절": { bg: "bg-red-500/15", text: "text-red-400", icon: "🛑" },
   "기간종료": { bg: "bg-slate-500/15", text: "text-slate-400", icon: "⏰" },
+  "미체결": { bg: "bg-yellow-500/15", text: "text-yellow-400", icon: "⏳" },
 };
 
 function WeeklyReportSection({
@@ -1127,9 +1134,9 @@ function PortfolioTradeRow({ result }: { result: PortfolioResult }) {
       </div>
       {/* 하단: 매매가 정보 */}
       <div className="flex items-center gap-4 text-[10px] text-slate-500">
-        <span>진입 <span className="text-slate-400 font-mono">{fmtPrice(result.entryPrice)}</span></span>
-        <span>청산 <span className="text-slate-400 font-mono">{fmtPrice(result.exitPrice)}</span></span>
-        <span className="hidden sm:inline">익절가 <span className="text-red-400/70 font-mono">{fmtPrice(result.tpTarget)}</span></span>
+        <span>매수가 <span className="text-slate-400 font-mono">{fmtPrice(result.entryPrice)}</span></span>
+        <span>매도가 <span className="text-slate-400 font-mono">{fmtPrice(result.exitPrice)}</span></span>
+        <span className="hidden sm:inline">익절 목표가 <span className="text-red-400/70 font-mono">{fmtPrice(result.tpTarget)}</span></span>
         <span className="hidden sm:inline">손절가 <span className="text-blue-400/70 font-mono">{fmtPrice(result.slTarget)}</span></span>
         <span className="ml-auto">P&L <span className={`font-mono ${result.pnl > 0 ? "text-red-400" : result.pnl < 0 ? "text-blue-400" : "text-slate-400"}`}>{result.pnl > 0 ? "+" : ""}{result.pnl}%</span></span>
       </div>

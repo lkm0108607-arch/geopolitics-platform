@@ -237,3 +237,473 @@ export function calcROC(data: PriceBar[], period: number = 12): number | null {
   if (previous === 0) return null;
   return ((current - previous) / previous) * 100;
 }
+
+// ─── Fibonacci Retracement Levels ───────────────────────────────────────────
+
+export interface FibonacciResult {
+  levels: number[];
+  currentZone: string;
+}
+
+export function calcFibonacciLevels(data: PriceBar[], lookback: number = 50): FibonacciResult | null {
+  if (data.length < lookback || lookback <= 0) return null;
+  const slice = data.slice(-lookback);
+  const high = Math.max(...slice.map(b => b.high ?? b.close));
+  const low = Math.min(...slice.map(b => b.low ?? b.close));
+  const diff = high - low;
+  if (diff === 0) return null;
+
+  const ratios = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  const levels = ratios.map(r => high - diff * r);
+  const current = data[data.length - 1].close;
+
+  // 현재 가격이 속한 구간 판별
+  let zone = 'above';
+  for (let i = 0; i < levels.length - 1; i++) {
+    if (current <= levels[i] && current >= levels[i + 1]) {
+      zone = `${ratios[i] * 100}%-${ratios[i + 1] * 100}%`;
+      break;
+    }
+  }
+  if (current < levels[levels.length - 1]) zone = 'below';
+
+  return { levels, currentZone: zone };
+}
+
+// ─── VWAP (Volume Weighted Average Price) ───────────────────────────────────
+
+export function calcVWAP(data: PriceBar[], period: number = 20): number | null {
+  if (data.length < period || period <= 0) return null;
+  const slice = data.slice(-period);
+
+  let cumulativeTPV = 0;
+  let cumulativeVol = 0;
+  for (const bar of slice) {
+    const vol = bar.volume ?? 0;
+    if (vol === 0) continue;
+    const tp = ((bar.high ?? bar.close) + (bar.low ?? bar.close) + bar.close) / 3;
+    cumulativeTPV += tp * vol;
+    cumulativeVol += vol;
+  }
+
+  return cumulativeVol > 0 ? cumulativeTPV / cumulativeVol : null;
+}
+
+// ─── MFI (Money Flow Index) ─────────────────────────────────────────────────
+
+export function calcMFI(data: PriceBar[], period: number = 14): number | null {
+  if (data.length < period + 1 || period <= 0) return null;
+  for (const bar of data) {
+    if (bar.high === undefined || bar.low === undefined || bar.volume === undefined) return null;
+  }
+
+  let positiveFlow = 0;
+  let negativeFlow = 0;
+  const slice = data.slice(-(period + 1));
+
+  for (let i = 1; i < slice.length; i++) {
+    const tp = (slice[i].high! + slice[i].low! + slice[i].close) / 3;
+    const prevTp = (slice[i - 1].high! + slice[i - 1].low! + slice[i - 1].close) / 3;
+    const rawFlow = tp * slice[i].volume!;
+    if (tp > prevTp) positiveFlow += rawFlow;
+    else if (tp < prevTp) negativeFlow += rawFlow;
+  }
+
+  if (negativeFlow === 0) return 100;
+  const mfRatio = positiveFlow / negativeFlow;
+  return 100 - 100 / (1 + mfRatio);
+}
+
+// ─── Keltner Channels ───────────────────────────────────────────────────────
+
+export interface KeltnerResult {
+  upper: number;
+  middle: number;
+  lower: number;
+  squeeze: boolean;
+}
+
+export function calcKeltnerChannels(
+  data: PriceBar[],
+  period: number = 20,
+  mult: number = 1.5,
+): KeltnerResult | null {
+  const ema = calcEMA(data, period);
+  const atr = calcATR(data, period);
+  if (ema === null || atr === null) return null;
+
+  const upper = ema + mult * atr;
+  const lower = ema - mult * atr;
+
+  // 볼린저 밴드와 비교하여 스퀴즈 감지
+  const bb = calcBollingerBands(data, period, 2);
+  const squeeze = bb !== null && bb.lower > lower && bb.upper < upper;
+
+  return { upper, middle: ema, lower, squeeze };
+}
+
+// ─── Donchian Channels ──────────────────────────────────────────────────────
+
+export interface DonchianResult {
+  upper: number;
+  lower: number;
+  mid: number;
+  width: number;
+}
+
+export function calcDonchianChannels(data: PriceBar[], period: number = 20): DonchianResult | null {
+  if (data.length < period || period <= 0) return null;
+  const slice = data.slice(-period);
+  const upper = Math.max(...slice.map(b => b.high ?? b.close));
+  const lower = Math.min(...slice.map(b => b.low ?? b.close));
+  const mid = (upper + lower) / 2;
+  return { upper, lower, mid, width: upper - lower };
+}
+
+// ─── CMF (Chaikin Money Flow) ───────────────────────────────────────────────
+
+export function calcCMF(data: PriceBar[], period: number = 20): number | null {
+  if (data.length < period || period <= 0) return null;
+  const slice = data.slice(-period);
+
+  let mfvSum = 0;
+  let volSum = 0;
+  for (const bar of slice) {
+    const high = bar.high ?? bar.close;
+    const low = bar.low ?? bar.close;
+    const vol = bar.volume ?? 0;
+    const range = high - low;
+    const clv = range !== 0 ? ((bar.close - low) - (high - bar.close)) / range : 0;
+    mfvSum += clv * vol;
+    volSum += vol;
+  }
+
+  return volSum !== 0 ? mfvSum / volSum : null;
+}
+
+// ─── Aroon Indicator ────────────────────────────────────────────────────────
+
+export interface AroonResult {
+  up: number;
+  down: number;
+  oscillator: number;
+}
+
+export function calcAroon(data: PriceBar[], period: number = 25): AroonResult | null {
+  if (data.length < period + 1 || period <= 0) return null;
+  const slice = data.slice(-(period + 1));
+
+  let highIdx = 0;
+  let lowIdx = 0;
+  let highVal = -Infinity;
+  let lowVal = Infinity;
+
+  for (let i = 0; i < slice.length; i++) {
+    const h = slice[i].high ?? slice[i].close;
+    const l = slice[i].low ?? slice[i].close;
+    if (h >= highVal) { highVal = h; highIdx = i; }
+    if (l <= lowVal) { lowVal = l; lowIdx = i; }
+  }
+
+  const up = ((highIdx) / period) * 100;
+  const down = ((lowIdx) / period) * 100;
+  return { up, down, oscillator: up - down };
+}
+
+// ─── Elder Ray (Bull/Bear Power) ────────────────────────────────────────────
+
+export interface ElderRayResult {
+  bullPower: number;
+  bearPower: number;
+}
+
+export function calcElderRay(data: PriceBar[], period: number = 13): ElderRayResult | null {
+  const ema = calcEMA(data, period);
+  if (ema === null) return null;
+  const last = data[data.length - 1];
+  const high = last.high ?? last.close;
+  const low = last.low ?? last.close;
+  return { bullPower: high - ema, bearPower: low - ema };
+}
+
+// ─── Ultimate Oscillator ────────────────────────────────────────────────────
+
+export function calcUltimateOscillator(data: PriceBar[]): number | null {
+  const minLen = 28 + 1; // 최소 29개 데이터
+  if (data.length < minLen) return null;
+  for (const bar of data) {
+    if (bar.high === undefined || bar.low === undefined) return null;
+  }
+
+  const bpArr: number[] = [];
+  const trArr: number[] = [];
+  for (let i = 1; i < data.length; i++) {
+    const low = Math.min(data[i].low!, data[i - 1].close);
+    const high = Math.max(data[i].high!, data[i - 1].close);
+    bpArr.push(data[i].close - low);
+    trArr.push(high - low);
+  }
+
+  const sumSlice = (arr: number[], len: number) =>
+    arr.slice(-len).reduce((a, b) => a + b, 0);
+
+  const avg7 = sumSlice(bpArr, 7) / sumSlice(trArr, 7);
+  const avg14 = sumSlice(bpArr, 14) / sumSlice(trArr, 14);
+  const avg28 = sumSlice(bpArr, 28) / sumSlice(trArr, 28);
+
+  if (!isFinite(avg7) || !isFinite(avg14) || !isFinite(avg28)) return null;
+  return (100 * (4 * avg7 + 2 * avg14 + avg28)) / 7;
+}
+
+// ─── Force Index ────────────────────────────────────────────────────────────
+
+export function calcForceIndex(data: PriceBar[], period: number = 13): number | null {
+  if (data.length < period + 1 || period <= 0) return null;
+  for (const bar of data) {
+    if (bar.volume === undefined) return null;
+  }
+
+  // 1기간 Force Index 시리즈 계산
+  const fiSeries: PriceBar[] = [];
+  for (let i = 1; i < data.length; i++) {
+    fiSeries.push({
+      close: (data[i].close - data[i - 1].close) * data[i].volume!,
+    });
+  }
+
+  return calcEMA(fiSeries, period);
+}
+
+// ─── OBV Trend ──────────────────────────────────────────────────────────────
+
+export interface OBVTrendResult {
+  trend: '상승' | '하락' | '보합';
+  divergence: boolean;
+}
+
+export function calcOBVTrend(data: PriceBar[]): OBVTrendResult | null {
+  if (data.length < 20) return null;
+  for (const bar of data) {
+    if (bar.volume === undefined) return null;
+  }
+
+  // OBV 시리즈 생성
+  const obv: number[] = [0];
+  for (let i = 1; i < data.length; i++) {
+    const prev = obv[i - 1];
+    if (data[i].close > data[i - 1].close) obv.push(prev + data[i].volume!);
+    else if (data[i].close < data[i - 1].close) obv.push(prev - data[i].volume!);
+    else obv.push(prev);
+  }
+
+  // 최근 10기간의 추세 판별 (선형 회귀 기울기)
+  const recent = obv.slice(-10);
+  const n = recent.length;
+  const xMean = (n - 1) / 2;
+  const yMean = recent.reduce((a, b) => a + b, 0) / n;
+  let num = 0, den = 0;
+  for (let i = 0; i < n; i++) {
+    num += (i - xMean) * (recent[i] - yMean);
+    den += (i - xMean) ** 2;
+  }
+  const slope = den !== 0 ? num / den : 0;
+
+  const threshold = Math.abs(yMean) * 0.001;
+  const trend = slope > threshold ? '상승' : slope < -threshold ? '하락' : '보합';
+
+  // 다이버전스: 가격과 OBV 방향이 다른 경우
+  const priceChange = data[data.length - 1].close - data[data.length - 10].close;
+  const divergence = (priceChange > 0 && slope < -threshold) || (priceChange < 0 && slope > threshold);
+
+  return { trend, divergence };
+}
+
+// ─── TRIX ───────────────────────────────────────────────────────────────────
+
+export function calcTrix(data: PriceBar[], period: number = 15): number | null {
+  if (data.length < period * 3 + 1 || period <= 0) return null;
+
+  // 3중 EMA 계산
+  const ema1 = calcEMASeries(data, period);
+  const ema1Bars: PriceBar[] = ema1
+    .filter((v): v is number => v !== null)
+    .map(v => ({ close: v }));
+
+  if (ema1Bars.length < period) return null;
+  const ema2 = calcEMASeries(ema1Bars, period);
+  const ema2Bars: PriceBar[] = ema2
+    .filter((v): v is number => v !== null)
+    .map(v => ({ close: v }));
+
+  if (ema2Bars.length < period) return null;
+  const ema3 = calcEMASeries(ema2Bars, period);
+  const valid = ema3.filter((v): v is number => v !== null);
+
+  if (valid.length < 2) return null;
+  const prev = valid[valid.length - 2];
+  const curr = valid[valid.length - 1];
+  return prev !== 0 ? ((curr - prev) / prev) * 100 : null;
+}
+
+// ─── Mass Index ─────────────────────────────────────────────────────────────
+
+export function calcMassIndex(data: PriceBar[], period: number = 25): number | null {
+  if (data.length < period + 18 || period <= 0) return null; // 9기간 EMA 두 번 적용
+  for (const bar of data) {
+    if (bar.high === undefined || bar.low === undefined) return null;
+  }
+
+  // High-Low 차이 시리즈
+  const hlBars: PriceBar[] = data.map(b => ({ close: b.high! - b.low! }));
+
+  // 단일 EMA (9기간)
+  const singleEMA = calcEMASeries(hlBars, 9);
+  const singleBars: PriceBar[] = singleEMA
+    .filter((v): v is number => v !== null)
+    .map(v => ({ close: v }));
+
+  if (singleBars.length < 9) return null;
+  // 이중 EMA (9기간)
+  const doubleEMA = calcEMASeries(singleBars, 9);
+  const doubleValid = doubleEMA.filter((v): v is number => v !== null);
+  const singleValid = singleEMA.filter((v): v is number => v !== null);
+
+  if (doubleValid.length < period || singleValid.length < period) return null;
+
+  // EMA ratio 합산
+  let sum = 0;
+  const sLen = singleValid.length;
+  const dLen = doubleValid.length;
+  for (let i = 0; i < period; i++) {
+    const s = singleValid[sLen - period + i];
+    const d = doubleValid[dLen - period + i];
+    if (d === 0) return null;
+    sum += s / d;
+  }
+
+  return sum;
+}
+
+// ─── Coppock Curve ──────────────────────────────────────────────────────────
+
+export function calcCoppockCurve(data: PriceBar[]): number | null {
+  // ROC(14) + ROC(11)의 10기간 WMA
+  const minLen = 14 + 10;
+  if (data.length < minLen) return null;
+
+  const rocSeries: number[] = [];
+  for (let i = 14; i < data.length; i++) {
+    const roc14 = data[i - 14].close !== 0
+      ? ((data[i].close - data[i - 14].close) / data[i - 14].close) * 100
+      : 0;
+    const roc11 = i >= 11 && data[i - 11].close !== 0
+      ? ((data[i].close - data[i - 11].close) / data[i - 11].close) * 100
+      : 0;
+    rocSeries.push(roc14 + roc11);
+  }
+
+  if (rocSeries.length < 10) return null;
+
+  // 10기간 WMA (Weighted Moving Average)
+  const slice = rocSeries.slice(-10);
+  let weightedSum = 0;
+  let weightTotal = 0;
+  for (let i = 0; i < 10; i++) {
+    const w = i + 1;
+    weightedSum += slice[i] * w;
+    weightTotal += w;
+  }
+
+  return weightedSum / weightTotal;
+}
+
+// ─── Pivot Points ───────────────────────────────────────────────────────────
+
+export interface PivotPointsResult {
+  pivot: number;
+  r1: number;
+  r2: number;
+  r3: number;
+  s1: number;
+  s2: number;
+  s3: number;
+}
+
+export function calcPivotPoints(data: PriceBar[]): PivotPointsResult | null {
+  if (data.length < 1) return null;
+  const bar = data[data.length - 1];
+  const high = bar.high ?? bar.close;
+  const low = bar.low ?? bar.close;
+  const close = bar.close;
+
+  const pivot = (high + low + close) / 3;
+  const r1 = 2 * pivot - low;
+  const s1 = 2 * pivot - high;
+  const r2 = pivot + (high - low);
+  const s2 = pivot - (high - low);
+  const r3 = high + 2 * (pivot - low);
+  const s3 = low - 2 * (high - pivot);
+
+  return { pivot, r1, r2, r3, s1, s2, s3 };
+}
+
+// ─── DMI (Directional Movement Index) ───────────────────────────────────────
+
+export interface DMIResult {
+  diPlus: number;
+  diMinus: number;
+  dx: number;
+}
+
+export function calcDMI(data: PriceBar[], period: number = 14): DMIResult | null {
+  if (data.length < period + 1 || period <= 0) return null;
+  for (const bar of data) {
+    if (bar.high === undefined || bar.low === undefined) return null;
+  }
+
+  let smoothDMPlus = 0;
+  let smoothDMMinus = 0;
+  let smoothTR = 0;
+
+  // 초기 period 구간의 합
+  for (let i = 1; i <= period; i++) {
+    const high = data[i].high!;
+    const low = data[i].low!;
+    const prevHigh = data[i - 1].high!;
+    const prevLow = data[i - 1].low!;
+    const prevClose = data[i - 1].close;
+
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+    smoothDMPlus += upMove > downMove && upMove > 0 ? upMove : 0;
+    smoothDMMinus += downMove > upMove && downMove > 0 ? downMove : 0;
+    smoothTR += Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+  }
+
+  // Wilder 평활화
+  for (let i = period + 1; i < data.length; i++) {
+    const high = data[i].high!;
+    const low = data[i].low!;
+    const prevHigh = data[i - 1].high!;
+    const prevLow = data[i - 1].low!;
+    const prevClose = data[i - 1].close;
+
+    const upMove = high - prevHigh;
+    const downMove = prevLow - low;
+    const dmPlus = upMove > downMove && upMove > 0 ? upMove : 0;
+    const dmMinus = downMove > upMove && downMove > 0 ? downMove : 0;
+    const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+
+    smoothDMPlus = smoothDMPlus - smoothDMPlus / period + dmPlus;
+    smoothDMMinus = smoothDMMinus - smoothDMMinus / period + dmMinus;
+    smoothTR = smoothTR - smoothTR / period + tr;
+  }
+
+  if (smoothTR === 0) return null;
+  const diPlus = (smoothDMPlus / smoothTR) * 100;
+  const diMinus = (smoothDMMinus / smoothTR) * 100;
+  const diSum = diPlus + diMinus;
+  const dx = diSum !== 0 ? (Math.abs(diPlus - diMinus) / diSum) * 100 : 0;
+
+  return { diPlus, diMinus, dx };
+}

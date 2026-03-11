@@ -15,8 +15,6 @@ const currencyConfigs: Record<Locale, LocaleCurrencyConfig> = {
     code: "KRW",
     locale: "ko-KR",
     formatLarge: (n: number) => {
-      if (Math.abs(n) >= 100000000) return (n / 100000000).toFixed(1) + "억원";
-      if (Math.abs(n) >= 10000) return (n / 10000).toFixed(0) + "만원";
       return n.toLocaleString("ko-KR") + "원";
     },
     format: (n: number) => n.toLocaleString("ko-KR") + "원",

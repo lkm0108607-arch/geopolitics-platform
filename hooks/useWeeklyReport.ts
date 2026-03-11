@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-export type ExitReason = "익절" | "손절" | "기간종료";
+export type ExitReason = "익절" | "손절" | "기간종료" | "미체결";
 
 export interface PortfolioResult {
   assetId: string;
