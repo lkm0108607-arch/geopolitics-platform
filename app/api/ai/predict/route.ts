@@ -530,16 +530,26 @@ async function runBatchFinal(cycleId: string) {
     });
   }
 
-  const ensembleLike = predictions.map((p) => ({
-    assetId: p.asset_id,
-    direction: p.direction as Direction,
-    probability: p.probability,
-    confidence: p.confidence,
-    rationale: p.rationale,
-    subModelVotes: p.sub_model_votes,
-    cycleId: p.cycle_id,
-    generatedAt: p.created_at ?? new Date().toISOString(),
-  }));
+  // sub_model_votes JSON에 timingPrediction, debateResult, juryVerdict가 함께 저장됨
+  const ensembleLike = predictions.map((p) => {
+    const votes = p.sub_model_votes as unknown as Record<string, unknown>;
+    return {
+      assetId: p.asset_id,
+      direction: p.direction as Direction,
+      probability: p.probability,
+      confidence: p.confidence,
+      rationale: p.rationale,
+      subModelVotes: p.sub_model_votes,
+      cycleId: p.cycle_id,
+      generatedAt: p.created_at ?? new Date().toISOString(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      timingPrediction: (votes?.timingPrediction ?? undefined) as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      debateResult: (votes?.debateResult ?? undefined) as any,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      juryVerdict: (votes?.juryVerdict ?? undefined) as any,
+    };
+  });
 
   const portfolio = buildPortfolio(ensembleLike);
 
