@@ -611,11 +611,13 @@ async function runBatchFinal(cycleId: string) {
   }
 
   let autoTradeCount = 0;
+  let autoTradeError: string | null = null;
   if (autoTradeRows.length > 0) {
     try {
       await saveAutoTrades(autoTradeRows);
       autoTradeCount = autoTradeRows.length;
     } catch (err) {
+      autoTradeError = err instanceof Error ? err.message : String(err);
       console.error("자동매매 저장 실패:", err);
     }
   }
@@ -629,6 +631,7 @@ async function runBatchFinal(cycleId: string) {
     livePricesFound: livePriceMap.size,
     autoTradesBeforeFilter: portfolio.length,
     autoTrades: autoTradeCount,
+    autoTradeError,
     debug: portfolio.slice(0, 5).map(p => ({
       assetId: p.assetId,
       name: p.name,
