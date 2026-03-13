@@ -553,6 +553,8 @@ async function runBatchFinal(cycleId: string) {
 
   const portfolio = buildPortfolio(ensembleLike);
 
+  console.log(`[final] 포트폴리오 ${portfolio.length}개:`, portfolio.map(p => `${p.assetId}(${p.signal})`).join(", "));
+
   if (portfolio.length === 0) {
     return NextResponse.json({
       success: true,
@@ -601,6 +603,12 @@ async function runBatchFinal(cycleId: string) {
       };
     })
     .filter((t) => t.entry_price > 0);
+
+  console.log(`[final] 자동매매 후보: ${autoTradeRows.length}개 (시세 있는 종목)`);
+  if (autoTradeRows.length === 0 && portfolio.length > 0) {
+    console.log(`[final] 시세 없는 종목:`, portfolio.map(p => p.assetId).join(", "));
+    console.log(`[final] livePriceMap 크기: ${livePriceMap.size}, 샘플:`, Array.from(livePriceMap.entries()).slice(0, 5));
+  }
 
   let autoTradeCount = 0;
   if (autoTradeRows.length > 0) {
