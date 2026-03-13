@@ -364,13 +364,16 @@ async function runBatchPredict(
 
   console.log(`[predict] offset=${offset}, 남은 자산=${remaining.length}`);
 
-  // 1. 남은 자산 중 최대 20개 히스토리 미리 로드 (넉넉하게 가져와서 시간 절약)
+  // 1. 히스토리 로드 + 네이버 fallback + 글로벌 가중치를 병렬로
   const prefetchSize = Math.min(20, remaining.length);
   const prefetchAssets = remaining.slice(0, prefetchSize);
-  const historyMap = await getMarketHistoryBatch(prefetchAssets, 90);
+
+  const [historyMap, globalWeights] = await Promise.all([
+    getMarketHistoryBatch(prefetchAssets, 90),
+    getModelWeights(),
+  ]);
 
   if (isTimeUp(t0)) {
-    // 히스토리 로드만으로 시간 초과 → 더 적은 수로 재시도
     const secretParam = secret ? `&secret=${secret}` : "";
     fireAndForget(`${baseUrl}/api/ai/predict?batch=predict&offset=${offset}&cycleId=${cycleId}${secretParam}`);
     return NextResponse.json({
@@ -393,94 +396,58 @@ async function runBatchPredict(
     }
   }
 
-  // 히스토리 부족 자산: 네이버 차트 / Yahoo fallback (시간 체크하며)
-  for (const assetId of prefetchAssets) {
-    if (isTimeUp(t0)) break;
-    if (assetDataMap[assetId] && assetDataMap[assetId].length >= 20) continue;
-
-    // Yahoo 글로벌 자산
-    if (Object.values(YAHOO_GLOBAL_SYMBOLS).includes(assetId)) {
-      const sym = ASSET_TO_SYMBOL[assetId];
-      if (sym) {
-        try {
+  // 히스토리 부족 자산: 네이버 차트 / Yahoo fallback (병렬)
+  const needFallback = prefetchAssets.filter(
+    (id) => !assetDataMap[id] || assetDataMap[id].length < 20,
+  );
+  if (needFallback.length > 0 && !isTimeUp(t0)) {
+    await Promise.allSettled(
+      needFallback.map(async (assetId) => {
+        if (Object.values(YAHOO_GLOBAL_SYMBOLS).includes(assetId)) {
+          const sym = ASSET_TO_SYMBOL[assetId];
+          if (!sym) return;
           const yahooData = await fetchYahooHistorical([sym]);
-          if (yahooData[assetId] && yahooData[assetId].length >= 20) {
-            assetDataMap[assetId] = yahooData[assetId];
-          }
-        } catch { /* ignore */ }
-      }
-      continue;
-    }
-
-    // 네이버 차트 fallback
-    const ticker = getNaverTicker(assetId);
-    if (ticker) {
-      try {
-        const bars = await fetchNaverChart(ticker);
-        if (bars.length >= 20) {
-          assetDataMap[assetId] = bars;
+          if (yahooData[assetId]?.length >= 20) assetDataMap[assetId] = yahooData[assetId];
+          return;
         }
-      } catch { /* ignore */ }
-    }
+        const ticker = getNaverTicker(assetId);
+        if (!ticker) return;
+        const bars = await fetchNaverChart(ticker);
+        if (bars.length >= 20) assetDataMap[assetId] = bars;
+      }),
+    );
   }
 
-  // 2. 거시경제 데이터
-  let collectedData = null;
-  if (!isTimeUp(t0)) {
-    try {
-      collectedData = await collectAllData();
-    } catch { /* ignore */ }
-  }
-
-  // 3. 교차 자산 데이터
+  // 2. 교차 자산 데이터
   const crossAssets: CrossAssetInput[] = Object.entries(assetDataMap).map(
     ([id, data]) => ({ assetId: id, data }),
   );
 
-  // 4. 시간 기반 예측 실행: 시간이 남는 한 계속 처리
+  // 3. 시간 기반 예측 실행 (collectAllData 생략 → 속도 우선)
   let processed = 0;
   for (const assetId of prefetchAssets) {
     if (isTimeUp(t0)) break;
 
     const data = assetDataMap[assetId];
     if (!data || data.length < 20) {
-      processed++; // 데이터 부족 → 건너뛰기 (offset은 전진)
+      processed++;
       continue;
     }
 
-    const assetWeights = await getModelWeights(assetId);
-    if (isTimeUp(t0)) break;
-
     const otherAssets = crossAssets.filter((ca) => ca.assetId !== assetId);
 
-    let fundamentalSignals = null;
-    if (collectedData) {
-      try {
-        fundamentalSignals = analyzeFundamentals(assetId, collectedData);
-      } catch { /* ignore */ }
-    }
-
-    const advancedSignals = computeAdvancedSignals(data, collectedData?.vix);
-
-    let historicalPatternResult = null;
-    if (!isTimeUp(t0)) {
-      try {
-        historicalPatternResult = await analyzeHistoricalPatterns(assetId, data, collectedData);
-      } catch { /* ignore */ }
-    }
-
-    if (isTimeUp(t0)) break;
+    const advancedSignals = computeAdvancedSignals(data);
 
     const input: EnsembleInput = {
       assetId,
       data,
       crossAssets: otherAssets,
-      config: assetWeights,
+      config: globalWeights, // 글로벌 가중치 재사용 (DB 쿼리 절약)
       cycleId,
-      collectedData,
-      fundamentalSignals,
+      collectedData: null,
+      fundamentalSignals: null,
       advancedSignals,
-      historicalPatternResult,
+      historicalPatternResult: null,
     };
 
     const prediction = runEnsemble(input);
