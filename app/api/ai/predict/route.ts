@@ -625,7 +625,16 @@ async function runBatchFinal(cycleId: string) {
     batch: "final",
     cycleId,
     totalPredictions: predictions.length,
+    portfolioPicks: portfolio.length,
+    livePricesFound: livePriceMap.size,
+    autoTradesBeforeFilter: portfolio.length,
     autoTrades: autoTradeCount,
+    debug: portfolio.slice(0, 5).map(p => ({
+      assetId: p.assetId,
+      name: p.name,
+      signal: p.signal,
+      livePrice: livePriceMap.get(p.assetId) ?? null,
+    })),
     generatedAt: new Date().toISOString(),
   });
 }
