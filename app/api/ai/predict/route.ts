@@ -365,8 +365,8 @@ async function runBatchPredict(
 
   console.log(`[predict] offset=${offset}, 남은 자산=${remaining.length}`);
 
-  // 1. 히스토리 로드 + 네이버 fallback + 글로벌 가중치를 병렬로
-  const prefetchSize = Math.min(20, remaining.length);
+  // 1. 히스토리 로드 + 글로벌 가중치 병렬
+  const prefetchSize = Math.min(15, remaining.length);
   const prefetchAssets = remaining.slice(0, prefetchSize);
 
   const [historyMap, globalWeights] = await Promise.all([
@@ -397,39 +397,42 @@ async function runBatchPredict(
     }
   }
 
-  // 히스토리 부족 자산: 네이버 차트 / Yahoo fallback
-  // 3초 타임아웃 + 최대 5개만 시도 (시간 절약)
+  // 히스토리 부족 자산: 네이버 차트 / Yahoo fallback (시간 허용하는 한 전부 시도)
   const needFallback = prefetchAssets.filter(
     (id) => !assetDataMap[id] || assetDataMap[id].length < 20,
   );
   if (needFallback.length > 0 && !isTimeUp(t0)) {
-    const fallbackSlice = needFallback.slice(0, 5); // 최대 5개만
-    const FALLBACK_TIMEOUT = 3000;
-    const fallbackWithTimeout = (promise: Promise<void>) =>
+    // 3개씩 병렬 + 각 2초 타임아웃
+    const PARALLEL = 3;
+    const PER_TIMEOUT = 2000;
+    const withTimeout = (promise: Promise<void>) =>
       Promise.race([
         promise,
-        new Promise<void>((resolve) => setTimeout(resolve, FALLBACK_TIMEOUT)),
+        new Promise<void>((resolve) => setTimeout(resolve, PER_TIMEOUT)),
       ]);
 
-    await Promise.allSettled(
-      fallbackSlice.map((assetId) =>
-        fallbackWithTimeout(
-          (async () => {
-            if (Object.values(YAHOO_GLOBAL_SYMBOLS).includes(assetId)) {
-              const sym = ASSET_TO_SYMBOL[assetId];
-              if (!sym) return;
-              const yahooData = await fetchYahooHistorical([sym]);
-              if (yahooData[assetId]?.length >= 20) assetDataMap[assetId] = yahooData[assetId];
-              return;
-            }
-            const ticker = getNaverTicker(assetId);
-            if (!ticker) return;
-            const bars = await fetchNaverChart(ticker);
-            if (bars.length >= 20) assetDataMap[assetId] = bars;
-          })(),
+    for (let i = 0; i < needFallback.length && !isTimeUp(t0); i += PARALLEL) {
+      const chunk = needFallback.slice(i, i + PARALLEL);
+      await Promise.allSettled(
+        chunk.map((assetId) =>
+          withTimeout(
+            (async () => {
+              if (Object.values(YAHOO_GLOBAL_SYMBOLS).includes(assetId)) {
+                const sym = ASSET_TO_SYMBOL[assetId];
+                if (!sym) return;
+                const yahooData = await fetchYahooHistorical([sym]);
+                if (yahooData[assetId]?.length >= 20) assetDataMap[assetId] = yahooData[assetId];
+                return;
+              }
+              const ticker = getNaverTicker(assetId);
+              if (!ticker) return;
+              const bars = await fetchNaverChart(ticker);
+              if (bars.length >= 20) assetDataMap[assetId] = bars;
+            })(),
+          ),
         ),
-      ),
-    );
+      );
+    }
   }
 
   // 2. 교차 자산 데이터
@@ -437,26 +440,26 @@ async function runBatchPredict(
     ([id, data]) => ({ assetId: id, data }),
   );
 
-  // 3. 시간 기반 예측 실행 (collectAllData 생략 → 속도 우선)
+  // 3. 시간 기반 예측 실행
   let processed = 0;
+  let predicted = 0;
   for (const assetId of prefetchAssets) {
     if (isTimeUp(t0)) break;
 
     const data = assetDataMap[assetId];
     if (!data || data.length < 20) {
-      processed++;
+      processed++; // 데이터 부족 → 건너뛰되 offset은 전진
       continue;
     }
 
     const otherAssets = crossAssets.filter((ca) => ca.assetId !== assetId);
-
     const advancedSignals = computeAdvancedSignals(data);
 
     const input: EnsembleInput = {
       assetId,
       data,
       crossAssets: otherAssets,
-      config: globalWeights, // 글로벌 가중치 재사용 (DB 쿼리 절약)
+      config: globalWeights,
       cycleId,
       collectedData: null,
       fundamentalSignals: null,
@@ -479,6 +482,7 @@ async function runBatchPredict(
         debateResult: prediction.debateResult,
         juryVerdict: prediction.juryVerdict,
       });
+      predicted++;
     } catch (err) {
       console.error(`예측 저장 실패 (${assetId}):`, err);
     }
@@ -499,7 +503,8 @@ async function runBatchPredict(
   }
 
   const elapsed = Date.now() - t0;
-  console.log(`[predict] offset=${offset}, 처리=${processed}, 경과=${elapsed}ms, 다음offset=${newOffset}`);
+  const skipped = processed - predicted;
+  console.log(`[predict] offset=${offset}, 예측=${predicted}, 건너뜀=${skipped}, 경과=${elapsed}ms, 다음=${newOffset}`);
 
   return NextResponse.json({
     success: true,
@@ -507,6 +512,8 @@ async function runBatchPredict(
     cycleId,
     offset,
     processed,
+    predicted,
+    skipped,
     newOffset,
     totalAssets: ALL_ASSET_IDS.length,
     elapsedMs: elapsed,
