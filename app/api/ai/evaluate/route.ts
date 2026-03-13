@@ -12,6 +12,9 @@ import {
 } from "@/lib/ai/dataService";
 import { ASSET_SYMBOLS, fetchLivePrice } from "@/lib/realtime/priceService";
 
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 // ─── 현재 가격 가져오기 (네이버 금융 + Yahoo Finance) ─────────────────────────
 
 interface CurrentPriceData {
@@ -48,13 +51,10 @@ function determineDirection(changePercent: number): Direction {
   return "보합";
 }
 
-// ─── POST: 예측 평가 ──────────────────────────────────────────────────────────
+// ─── 핵심 평가 로직 ──────────────────────────────────────────────────────────
 
-export async function POST(request: Request) {
+async function runEvaluation(targetCycleId?: string) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const targetCycleId = (body as Record<string, string>).cycleId ?? undefined;
-
     // 1. 최근 사이클의 예측 조회
     const predictions = await getLatestPredictions(targetCycleId);
 
@@ -223,4 +223,29 @@ export async function POST(request: Request) {
       { status: 500 },
     );
   }
+}
+
+// ─── GET: Vercel Cron 전용 (이전 예측 평가 + 강화학습) ──────────────────────
+
+export async function GET(request: Request) {
+  const authHeader = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (
+    process.env.NODE_ENV === "production" &&
+    cronSecret &&
+    authHeader !== `Bearer ${cronSecret}`
+  ) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  return runEvaluation();
+}
+
+// ─── POST: 예측 평가 (수동 호출용) ──────────────────────────────────────────
+
+export async function POST(request: Request) {
+  const body = await request.json().catch(() => ({}));
+  const targetCycleId = (body as Record<string, string>).cycleId ?? undefined;
+  return runEvaluation(targetCycleId);
 }

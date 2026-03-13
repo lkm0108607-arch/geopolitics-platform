@@ -187,10 +187,22 @@ export default function AISystemPage() {
   const [showAllLogs, setShowAllLogs] = useState(false);
 
   // Get current weights (latest from history or defaults)
+  // DB 값이 0~1 소수일 수 있으므로 퍼센트(0~100)로 정규화
   const currentWeights = useMemo(() => {
     if (weightHistory.length > 0) {
       const latest = weightHistory[weightHistory.length - 1];
-      return latest.weights;
+      const raw = latest.weights;
+      const values = Object.values(raw);
+      // 모든 값이 1 이하면 0~1 비율 → 100 곱해 퍼센트로 변환
+      const isDecimal = values.length > 0 && values.every((v) => v <= 1);
+      if (isDecimal) {
+        const converted: Record<string, number> = {};
+        for (const [k, v] of Object.entries(raw)) {
+          converted[k] = Math.round(v * 1000) / 10; // 소수 1자리 퍼센트
+        }
+        return converted;
+      }
+      return raw;
     }
     return DEFAULT_WEIGHTS;
   }, [weightHistory]);
@@ -372,7 +384,7 @@ export default function AISystemPage() {
                   >
                     <div className={`${model.color} flex justify-center mb-1.5`}>{model.icon}</div>
                     <p className={`text-xs font-semibold ${model.color}`}>{model.name}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{currentWeights[model.key] ?? model.weight}%</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{Math.round((currentWeights[model.key] ?? model.weight) * 10) / 10}%</p>
                   </div>
                 ))}
               </div>
@@ -472,7 +484,7 @@ export default function AISystemPage() {
                     <span
                       className={`text-xs font-mono font-bold ${model.color} ${model.bgColor} rounded-full px-2.5 py-0.5`}
                     >
-                      {w}%
+                      {Math.round(w * 10) / 10}%
                     </span>
                   </div>
 
@@ -533,33 +545,37 @@ export default function AISystemPage() {
               </p>
               <div className="space-y-2">
                 <p className="text-[10px] text-slate-500 uppercase tracking-wider">현재 가중치 배분</p>
-                {MODELS.map((model) => {
-                  const w = currentWeights[model.key] ?? model.weight;
-                  return (
-                    <div key={model.key} className="flex items-center gap-2">
-                      <span className={`text-[10px] w-16 truncate ${model.color}`}>{model.name}</span>
-                      <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500`}
-                          style={{
-                            width: `${w * 2}%`,
-                            background:
-                              model.key === "momentum"
-                                ? "#60a5fa"
-                                : model.key === "meanReversion"
-                                  ? "#fbbf24"
-                                  : model.key === "volatility"
-                                    ? "#fb7185"
-                                    : model.key === "correlation"
-                                      ? "#c084fc"
-                                      : "#34d399",
-                          }}
-                        />
+                {(() => {
+                  const weights = MODELS.map((m) => currentWeights[m.key] ?? m.weight);
+                  const maxW = Math.max(...weights, 1);
+                  return MODELS.map((model, idx) => {
+                    const w = weights[idx];
+                    return (
+                      <div key={model.key} className="flex items-center gap-2 min-w-0">
+                        <span className={`text-[10px] w-14 shrink-0 truncate ${model.color}`}>{model.name}</span>
+                        <div className="flex-1 h-1.5 rounded-full bg-slate-700 overflow-hidden min-w-0">
+                          <div
+                            className="h-full rounded-full transition-all duration-500"
+                            style={{
+                              width: `${Math.min((w / maxW) * 100, 100)}%`,
+                              background:
+                                model.key === "momentum"
+                                  ? "#60a5fa"
+                                  : model.key === "meanReversion"
+                                    ? "#fbbf24"
+                                    : model.key === "volatility"
+                                      ? "#fb7185"
+                                      : model.key === "correlation"
+                                        ? "#c084fc"
+                                        : "#34d399",
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400 w-10 shrink-0 text-right">{Math.round(w * 10) / 10}%</span>
                       </div>
-                      <span className="text-[10px] font-mono text-slate-400 w-8 text-right">{w}%</span>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             </div>
           </div>
@@ -636,13 +652,21 @@ export default function AISystemPage() {
 
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/70 overflow-hidden">
               {visibleWeights.map((entry, idx) => {
+                // 0~1 소수 → 퍼센트 변환
+                const rawValues = Object.values(entry.weights);
+                const isDecimal = rawValues.length > 0 && rawValues.every((v) => v <= 1);
+                const normalizedWeights: Record<string, number> = {};
+                for (const [k, v] of Object.entries(entry.weights)) {
+                  normalizedWeights[k] = isDecimal ? Math.round(v * 1000) / 10 : v;
+                }
+
                 // 변동이 있는 모델만 표시
                 const changes = MODELS.map((m) => {
-                  const w = entry.weights[m.key];
+                  const w = normalizedWeights[m.key];
                   const defaultW = DEFAULT_WEIGHTS[m.key];
-                  const diff = w != null && defaultW != null ? w - defaultW : 0;
-                  return { ...m, w, diff };
-                }).filter((m) => m.diff !== 0);
+                  const diff = w != null && defaultW != null ? Math.round((w - defaultW) * 10) / 10 : 0;
+                  return { ...m, w: w != null ? Math.round(w * 10) / 10 : w, diff };
+                }).filter((m) => Math.abs(m.diff) >= 0.1);
 
                 return (
                   <div

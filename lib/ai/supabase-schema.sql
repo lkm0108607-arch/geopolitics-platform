@@ -86,6 +86,39 @@ create policy "Allow all for anon" on prediction_results for all using (true) wi
 create policy "Allow all for anon" on model_weights for all using (true) with check (true);
 create policy "Allow all for anon" on learning_logs for all using (true) with check (true);
 
+-- auto_trades: AI 추천 포트폴리오 자동매매 기록
+create table auto_trades (
+  id uuid default gen_random_uuid() primary key,
+  cycle_id text not null,
+  asset_id text not null,
+  name text not null,
+  signal text not null,
+  weight numeric not null,
+  entry_price numeric not null,
+  tp_target numeric not null,
+  sl_target numeric not null,
+  predicted_return numeric not null,
+  holding_days integer not null default 7,
+  status text not null default 'pending', -- pending/filled/tp_hit/sl_hit/expired/cancelled
+  fill_price numeric,
+  fill_date timestamptz,
+  exit_price numeric,
+  exit_date timestamptz,
+  exit_reason text, -- 익절/손절/기간종료/미체결
+  actual_return numeric,
+  exit_day integer,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  expires_at timestamptz not null,
+  unique(cycle_id, asset_id)
+);
+create index idx_auto_trades_status on auto_trades(status);
+create index idx_auto_trades_cycle on auto_trades(cycle_id);
+create index idx_auto_trades_created on auto_trades(created_at desc);
+
+alter table auto_trades enable row level security;
+create policy "Allow all for anon" on auto_trades for all using (true) with check (true);
+
 -- ============================================================================
 -- 기본 가중치 삽입
 -- ============================================================================

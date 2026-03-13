@@ -4,143 +4,17 @@ import {
   getModelWeights,
   saveModelWeights,
   saveLearningLog,
+  getAutoTradesForWeek,
+  type AutoTradeRow,
 } from "@/lib/ai/dataService";
 import { batchLearn } from "@/lib/ai/learner";
 import type { PredictionOutcome } from "@/lib/ai/learner";
 import type { Direction } from "@/lib/ai/models";
 import type { AIPrediction, SubModelVotes } from "@/lib/ai/ensemble";
-import { getAssetById } from "@/data/assets";
+import { buildPortfolio, type PortfolioPick } from "@/lib/ai/portfolioBuilder";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
-
-// ─── 포트폴리오 로직 재현 (investment page와 동일) ────────────────────────────
-
-type InvestmentSignal = "강력매수" | "매수" | "관망" | "매도" | "강력매도";
-
-function computeSignal(pred: AIPrediction): InvestmentSignal {
-  const { direction, probability, confidence } = pred;
-
-  // investment page와 동일한 로직
-  if (direction === "상승") {
-    if (probability >= 70 && confidence >= 30) return "강력매수";
-    if (probability >= 70) return "매수";
-    if (probability >= 55 && confidence >= 25) return "매수";
-    if (probability >= 55) return "관망";
-  } else if (direction === "하락") {
-    if (probability >= 70 && confidence >= 30) return "강력매도";
-    if (probability >= 70) return "매도";
-    if (probability >= 55 && confidence >= 25) return "매도";
-    if (probability >= 55) return "관망";
-  }
-
-  // 배심원/토론 데이터 보너스
-  const juryVerdict = pred.juryVerdict;
-  const debateResult = pred.debateResult;
-  if (juryVerdict || debateResult) {
-    let bonus = 0;
-    if (juryVerdict) {
-      const b: Record<string, number> = { "신뢰": 15, "부분신뢰": 5, "의심": -5, "불신": -15 };
-      bonus += b[juryVerdict.finalVerdict] ?? 0;
-    }
-    if (debateResult) {
-      const b: Record<string, number> = { "만장일치": 10, "다수결": 5, "분열": -5, "교착": -10 };
-      bonus += b[debateResult.agreementLevel] ?? 0;
-    }
-    const adjusted = probability + bonus;
-    if (direction === "상승" && adjusted >= 60) return "매수";
-    if (direction === "하락" && adjusted >= 60) return "매도";
-  }
-
-  return "관망";
-}
-
-function computeTimingScore(pred: AIPrediction): number {
-  // investment page와 동일한 로직
-  let score = pred.probability;
-  if (pred.confidence >= 35) score += 5;
-  else if (pred.confidence >= 25) score += 0;
-  else score -= 5;
-
-  // 배심원/토론 보너스
-  if (pred.juryVerdict) {
-    const b: Record<string, number> = { "신뢰": 10, "부분신뢰": 3, "의심": -5, "불신": -10 };
-    score += b[pred.juryVerdict.finalVerdict] ?? 0;
-  }
-  if (pred.debateResult) {
-    const b: Record<string, number> = { "만장일치": 10, "다수결": 3, "분열": -3, "교착": -10 };
-    score += b[pred.debateResult.agreementLevel] ?? 0;
-  }
-  return Math.max(0, Math.min(100, Math.round(score)));
-}
-
-interface PortfolioPick {
-  assetId: string;
-  name: string;
-  signal: InvestmentSignal;
-  timingScore: number;
-  weight: number;
-  predictedDirection: string;
-  predictedReturn: number;
-  stopLossPercent: number;
-  holdingDays: number;
-  cycleId: string;
-}
-
-/** AI 예측 배열에서 추천 포트폴리오 5종목을 추출 */
-function buildPortfolio(predictions: AIPrediction[]): PortfolioPick[] {
-  const buyItems: { pred: AIPrediction; signal: InvestmentSignal; score: number }[] = [];
-
-  for (const pred of predictions) {
-    // ETF만 포함 (지수·금리·환율·원자재 제외), 이름 해결된 종목만
-    if (!pred.assetId.startsWith("etf-")) continue;
-    const asset = getAssetById(pred.assetId);
-    if (!asset || asset.name === pred.assetId) continue;
-
-    const signal = computeSignal(pred);
-    if (signal === "강력매수" || signal === "매수") {
-      buyItems.push({ pred, signal, score: computeTimingScore(pred) });
-    }
-  }
-
-  buyItems.sort((a, b) => b.score - a.score);
-  const top5 = buyItems.slice(0, 5);
-  if (top5.length === 0) return [];
-
-  const totalScore = top5.reduce((s, t) => s + t.score, 0);
-
-  return top5.map((item) => {
-    const asset = getAssetById(item.pred.assetId);
-    const tp = item.pred.timingPrediction;
-
-    // 목표 수익률
-    const base = Math.max(0, (item.pred.probability - 50) * 0.15);
-    const predictedReturn = tp
-      ? tp.expectedReturnPercent
-      : item.pred.direction === "상승" ? base : -base;
-
-    // 손절 기준: timingPrediction이 있으면 사용, 없으면 목표수익률의 70% (최소 1.5%)
-    const stopLossPercent = tp
-      ? tp.stopLossPercent
-      : Math.round(Math.max(1.5, Math.abs(predictedReturn) * 0.7) * 10) / 10;
-
-    // 보유 기간: timingPrediction이 있으면 사용, 없으면 7일 기본
-    const holdingDays = tp?.holdingPeriodDays ?? 7;
-
-    return {
-      assetId: item.pred.assetId,
-      name: asset?.name ?? item.pred.assetId,
-      signal: item.signal,
-      timingScore: item.score,
-      weight: totalScore > 0 ? Math.round((item.score / totalScore) * 100) : 20,
-      predictedDirection: item.pred.direction,
-      predictedReturn: Math.round(predictedReturn * 10) / 10,
-      stopLossPercent,
-      holdingDays,
-      cycleId: item.pred.cycleId,
-    };
-  });
-}
 
 // ─── 주차 범위 계산 ──────────────────────────────────────────────────────────
 
@@ -165,7 +39,7 @@ function fmtDate(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-// ─── 자동매매 시뮬레이션 결과 ────────────────────────────────────────────────
+// ─── 자동매매 결과 타입 ──────────────────────────────────────────────────────
 
 type ExitReason = "익절" | "손절" | "기간종료" | "미체결";
 
@@ -174,14 +48,12 @@ export interface PortfolioResult {
   name: string;
   signal: string;
   weight: number;
-  // 매매 시뮬레이션
   entryPrice: number | null;
   exitPrice: number | null;
-  tpTarget: number | null;       // 익절 목표가
-  slTarget: number | null;       // 손절가
-  exitReason: ExitReason;         // "익절" | "손절" | "기간종료" | "미체결"
-  exitDay: number | null;        // 몇째 날에 청산 (1~7, null=미체결 또는 데이터 없음)
-  // 성적
+  tpTarget: number | null;
+  slTarget: number | null;
+  exitReason: ExitReason;
+  exitDay: number | null;
   predictedReturn: number;
   actualReturn: number;
   wasCorrect: boolean;
@@ -196,15 +68,102 @@ export interface WeeklyReportData {
   hitRate: number;
   hitCount: number;
   totalCount: number;
-  tpCount: number;        // 익절 횟수
-  slCount: number;        // 손절 횟수
-  holdCount: number;      // 기간종료 횟수
+  tpCount: number;
+  slCount: number;
+  holdCount: number;
   bestPick: { name: string; returnPercent: number } | null;
   worstPick: { name: string; returnPercent: number } | null;
   weeklyLesson: string;
 }
 
-// ─── 자동매매 시뮬레이션 로직 ────────────────────────────────────────────────
+// ─── auto_trades DB에서 리포트 생성 (우선) ───────────────────────────────────
+
+function buildReportFromAutoTrades(
+  trades: AutoTradeRow[],
+  weekStart: string,
+  weekEnd: string,
+): WeeklyReportData | null {
+  if (trades.length === 0) return null;
+
+  // 완료되지 않은 거래도 포함 (pending/filled는 진행중으로 표시)
+  let tpCount = 0;
+  let slCount = 0;
+  let holdCount = 0;
+
+  const portfolioResults: PortfolioResult[] = trades.map((t) => {
+    let exitReason: ExitReason = "기간종료";
+    let actualReturn = Number(t.actual_return ?? 0);
+
+    if (t.status === "tp_hit") {
+      exitReason = "익절";
+      tpCount++;
+    } else if (t.status === "sl_hit") {
+      exitReason = "손절";
+      slCount++;
+    } else if (t.status === "expired") {
+      exitReason = "기간종료";
+      holdCount++;
+    } else if (t.status === "cancelled") {
+      exitReason = "미체결";
+      holdCount++;
+    } else if (t.status === "pending") {
+      exitReason = "미체결";
+      actualReturn = 0;
+      holdCount++;
+    } else if (t.status === "filled") {
+      // 아직 진행중 — 기간종료로 표시하되 수익률은 0
+      exitReason = "기간종료";
+      actualReturn = 0;
+      holdCount++;
+    }
+
+    const pnl = Math.round((Number(t.weight) * actualReturn) / 100 * 100) / 100;
+
+    return {
+      assetId: t.asset_id,
+      name: t.name,
+      signal: t.signal,
+      weight: Number(t.weight),
+      entryPrice: Number(t.entry_price),
+      exitPrice: t.exit_price ? Number(t.exit_price) : null,
+      tpTarget: Number(t.tp_target),
+      slTarget: Number(t.sl_target),
+      exitReason,
+      exitDay: t.exit_day ?? null,
+      predictedReturn: Number(t.predicted_return),
+      actualReturn,
+      wasCorrect: actualReturn > 0,
+      pnl,
+    };
+  });
+
+  const portfolioReturn = Math.round(
+    portfolioResults.reduce((sum, r) => sum + r.pnl, 0) * 100
+  ) / 100;
+
+  const hitCount = portfolioResults.filter((r) => r.wasCorrect).length;
+  const totalCount = portfolioResults.length;
+  const hitRate = totalCount > 0 ? Math.round((hitCount / totalCount) * 100) : 0;
+
+  const sorted = [...portfolioResults].sort((a, b) => b.actualReturn - a.actualReturn);
+  const bestPick = sorted.length > 0
+    ? { name: sorted[0].name, returnPercent: sorted[0].actualReturn }
+    : null;
+  const worstPick = sorted.length > 0
+    ? { name: sorted[sorted.length - 1].name, returnPercent: sorted[sorted.length - 1].actualReturn }
+    : null;
+
+  const weeklyLesson = generatePortfolioLesson(portfolioResults, portfolioReturn, hitRate, tpCount, slCount, holdCount, bestPick, worstPick);
+
+  return {
+    weekStart, weekEnd, portfolio: portfolioResults,
+    portfolioReturn, hitRate, hitCount, totalCount,
+    tpCount, slCount, holdCount,
+    bestPick, worstPick, weeklyLesson,
+  };
+}
+
+// ─── 시뮬레이션 fallback (auto_trades 테이블 없는 과거 주차용) ──────────────
 
 interface DaySnapshot {
   close: number;
@@ -217,7 +176,6 @@ async function getWeekSnapshots(
   weekStart: string,
   weekEnd: string,
 ): Promise<Map<string, DaySnapshot[]>> {
-  // weekEnd + 7일까지 (보유기간이 주를 넘길 수 있음)
   const extendedEnd = new Date(new Date(weekEnd).getTime() + 7 * 86400000).toISOString();
 
   const { data } = await supabase
@@ -249,7 +207,6 @@ function simulateTrade(
     return { entryPrice: 0, exitPrice: 0, exitReason: "미체결", exitDay: 0, actualReturn: 0 };
   }
 
-  // 진입가 = 추천 시점의 종가 (day 0)
   const targetEntry = snapshots[0].close;
   if (targetEntry <= 0) {
     return { entryPrice: 0, exitPrice: 0, exitReason: "미체결", exitDay: 0, actualReturn: 0 };
@@ -258,8 +215,6 @@ function simulateTrade(
   const tpPrice = targetEntry * (1 + Math.abs(pick.predictedReturn) / 100);
   const slPrice = targetEntry * (1 - pick.stopLossPercent / 100);
 
-  // 1단계: 진입 대기 — 현재가가 매수진입가에 도달해야 매수 체결
-  // (day 0은 추천일이므로 day 1부터 체결 탐색)
   let entryDay = -1;
   for (let i = 1; i < snapshots.length && i <= pick.holdingDays; i++) {
     if (snapshots[i].low <= targetEntry) {
@@ -268,29 +223,22 @@ function simulateTrade(
     }
   }
 
-  // 진입가 미도달 → 미체결
   if (entryDay < 0) {
     return { entryPrice: targetEntry, exitPrice: 0, exitReason: "미체결", exitDay: 0, actualReturn: 0 };
   }
 
-  // 2단계: 진입 후 TP/SL 체크 — 익절가/손절가에 현재가 도달 시 매도
   for (let i = entryDay + 1; i < snapshots.length && i <= pick.holdingDays; i++) {
     const day = snapshots[i];
-
-    // SL 먼저 체크 (보수적: 같은 날 둘 다 터지면 SL 우선)
     if (day.low <= slPrice) {
       const ret = -pick.stopLossPercent;
       return { entryPrice: targetEntry, exitPrice: slPrice, exitReason: "손절", exitDay: i, actualReturn: Math.round(ret * 100) / 100 };
     }
-
-    // TP 체크
     if (day.high >= tpPrice) {
       const ret = Math.abs(pick.predictedReturn);
       return { entryPrice: targetEntry, exitPrice: tpPrice, exitReason: "익절", exitDay: i, actualReturn: Math.round(ret * 100) / 100 };
     }
   }
 
-  // 보유기간 종료 → 마지막 날 종가로 청산
   const lastIdx = Math.min(snapshots.length - 1, pick.holdingDays);
   const exitPrice = snapshots[lastIdx].close;
   const actualReturn = Math.round(((exitPrice - targetEntry) / targetEntry) * 100 * 100) / 100;
@@ -298,54 +246,13 @@ function simulateTrade(
   return { entryPrice: targetEntry, exitPrice, exitReason: "기간종료", exitDay: lastIdx, actualReturn };
 }
 
-// ─── 특정 주 리포트 생성 ──────────────────────────────────────────────────────
-
-async function buildWeeklyReport(weeksAgo: number): Promise<WeeklyReportData | null> {
-  const { weekStart, weekEnd } = getWeekRange(weeksAgo);
-
-  // 1. 해당 주 ai_predictions 조회
-  const { data: preds } = await supabase
-    .from("ai_predictions")
-    .select("*")
-    .gte("created_at", weekStart)
-    .lte("created_at", weekEnd)
-    .order("created_at", { ascending: false });
-
-  if (!preds || preds.length === 0) {
-    const { data: latestPred } = await supabase
-      .from("ai_predictions")
-      .select("cycle_id")
-      .lte("created_at", weekEnd)
-      .order("created_at", { ascending: false })
-      .limit(1);
-
-    if (!latestPred || latestPred.length === 0) return null;
-
-    const { data: cyclePreds } = await supabase
-      .from("ai_predictions")
-      .select("*")
-      .eq("cycle_id", latestPred[0].cycle_id);
-
-    if (!cyclePreds || cyclePreds.length === 0) return null;
-
-    return buildReportFromPredictions(cyclePreds, weekStart, weekEnd);
-  }
-
-  const latestCycleId = preds[0].cycle_id;
-  const cyclePreds = preds.filter((p: Record<string, string>) => p.cycle_id === latestCycleId);
-
-  return buildReportFromPredictions(cyclePreds, weekStart, weekEnd);
-}
-
-async function buildReportFromPredictions(
+async function buildReportFromSimulation(
   rawPreds: Record<string, unknown>[],
   weekStart: string,
   weekEnd: string,
 ): Promise<WeeklyReportData | null> {
-  // AIPrediction 형태로 변환 (timingPrediction, debateResult, juryVerdict 포함)
   const predictions: AIPrediction[] = rawPreds.map((p) => {
     const votes = p.sub_model_votes as Record<string, unknown> | null;
-    // savePrediction에서 sub_model_votes JSON에 함께 저장한 데이터 추출
     const rawTiming = (p as Record<string, unknown>).timing_prediction ??
       votes?.timingPrediction ?? null;
     const rawDebate = votes?.debateResult ?? null;
@@ -366,16 +273,12 @@ async function buildReportFromPredictions(
     };
   });
 
-  // 포트폴리오 추출
   const portfolio = buildPortfolio(predictions);
   if (portfolio.length === 0) return null;
 
   const assetIds = portfolio.map((p) => p.assetId);
-
-  // 자동매매 시뮬레이션: market_snapshots에서 주간 가격 데이터 조회
   const snapshotsMap = await getWeekSnapshots(assetIds, weekStart, weekEnd);
 
-  // prediction_results도 fallback으로 조회
   const { data: results } = await supabase
     .from("prediction_results")
     .select("*")
@@ -388,7 +291,6 @@ async function buildReportFromPredictions(
     resultMap.set(r.asset_id, r);
   }
 
-  // 포트폴리오 자동매매 시뮬레이션
   let tpCount = 0;
   let slCount = 0;
   let holdCount = 0;
@@ -407,7 +309,6 @@ async function buildReportFromPredictions(
     let wasCorrect = false;
 
     if (snapshots.length > 0 && snapshots[0].close > 0) {
-      // 시뮬레이션 실행 (진입가 도달 시 매수, TP/SL 도달 시 매도)
       const sim = simulateTrade(pick, snapshots);
       entryPrice = sim.entryPrice > 0 ? sim.entryPrice : snapshots[0].close;
       tpTarget = Math.round(entryPrice * (1 + Math.abs(pick.predictedReturn) / 100));
@@ -418,7 +319,6 @@ async function buildReportFromPredictions(
       actualReturn = sim.actualReturn;
       wasCorrect = actualReturn > 0;
     } else if (result) {
-      // snapshots 없으면 prediction_results fallback
       actualReturn = Math.round(((result.actual_change_percent as number) ?? 0) * 100) / 100;
       wasCorrect = result.was_correct as boolean;
     }
@@ -471,6 +371,55 @@ async function buildReportFromPredictions(
     tpCount, slCount, holdCount,
     bestPick, worstPick, weeklyLesson,
   };
+}
+
+// ─── 특정 주 리포트 생성 ────────────────────────────────────────────────────
+
+async function buildWeeklyReport(weeksAgo: number): Promise<WeeklyReportData | null> {
+  const { weekStart, weekEnd } = getWeekRange(weeksAgo);
+
+  // 1. auto_trades 테이블에서 실제 자동매매 기록 조회 (우선)
+  try {
+    const autoTrades = await getAutoTradesForWeek(weekStart, weekEnd);
+    if (autoTrades.length > 0) {
+      return buildReportFromAutoTrades(autoTrades, weekStart, weekEnd);
+    }
+  } catch {
+    // auto_trades 테이블이 없거나 에러 시 시뮬레이션 fallback
+  }
+
+  // 2. fallback: ai_predictions 기반 시뮬레이션 (auto_trades 없는 과거 주차)
+  const { data: preds } = await supabase
+    .from("ai_predictions")
+    .select("*")
+    .gte("created_at", weekStart)
+    .lte("created_at", weekEnd)
+    .order("created_at", { ascending: false });
+
+  if (!preds || preds.length === 0) {
+    const { data: latestPred } = await supabase
+      .from("ai_predictions")
+      .select("cycle_id")
+      .lte("created_at", weekEnd)
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (!latestPred || latestPred.length === 0) return null;
+
+    const { data: cyclePreds } = await supabase
+      .from("ai_predictions")
+      .select("*")
+      .eq("cycle_id", latestPred[0].cycle_id);
+
+    if (!cyclePreds || cyclePreds.length === 0) return null;
+
+    return buildReportFromSimulation(cyclePreds, weekStart, weekEnd);
+  }
+
+  const latestCycleId = preds[0].cycle_id;
+  const cyclePreds = preds.filter((p: Record<string, string>) => p.cycle_id === latestCycleId);
+
+  return buildReportFromSimulation(cyclePreds, weekStart, weekEnd);
 }
 
 // ─── GET: 최근 4주 포트폴리오 리포트 조회 ────────────────────────────────────
@@ -630,7 +579,6 @@ function generatePortfolioLesson(
     lines.push(`최악: ${worstPick.name} (${worstPick.returnPercent > 0 ? "+" : ""}${worstPick.returnPercent}%)`);
   }
 
-  // 자동매매 전략 피드백
   if (tpCount > slCount && portfolioReturn > 0) {
     lines.push("→ 익절 전략 유효. TP/SL 비율 양호. 현재 매매 기준 유지.");
   } else if (slCount > tpCount) {

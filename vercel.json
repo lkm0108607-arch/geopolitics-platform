@@ -1,8 +1,24 @@
 {
   "crons": [
     {
-      "path": "/api/ai/pipeline",
+      "path": "/api/ai/evaluate",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict",
+      "schedule": "5 5 * * *"
+    },
+    {
+      "path": "/api/cron/weekly",
+      "schedule": "10 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict-recover",
+      "schedule": "20 5 * * *"
+    },
+    {
+      "path": "/api/cron/check-trades",
+      "schedule": "25 5 * * *"
     },
     {
       "path": "/api/health/prices",

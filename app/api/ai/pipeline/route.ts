@@ -1,17 +1,13 @@
 import { NextResponse } from "next/server";
 
 /**
- * AI 전체 파이프라인 (Vercel Cron 전용)
+ * AI 전체 파이프라인 (수동 실행 / 디버깅용)
  *
- * 매일 오후 2시 (KST) 자동 실행:
- * 1단계: 이전 예측 평가 + 학습 (POST /api/ai/evaluate)
- * 2단계: 새 예측 생성 (POST /api/ai/predict)
- *
- * 모든 정보가 자동으로 업데이트됩니다:
- * - 예측 정확도 (prediction_results)
- * - 학습 로그 (learning_logs)
- * - 모델 가중치 (model_weights)
- * - 새 예측 (ai_predictions)
+ * ⚠️ Cron에서는 더 이상 사용하지 않음.
+ * Cron은 개별 라우트로 분리됨:
+ *   - GET /api/ai/evaluate    (KST 14:00) 이전 예측 평가 + 학습
+ *   - GET /api/cron/predict   (KST 14:05) 새 예측 생성
+ *   - GET /api/cron/weekly    (KST 14:10, 월요일만) 주간 리포트 + 강화학습
  */
 
 export const dynamic = "force-dynamic";

@@ -126,6 +126,80 @@ export async function getMarketHistory(
   return (data ?? []) as MarketSnapshotRow[];
 }
 
+/**
+ * 시장 스냅샷을 일괄 저장한다. (배치 predict용)
+ */
+export async function saveMarketSnapshotsBatch(
+  snapshots: {
+    assetId: string;
+    closePrice: number;
+    highPrice?: number;
+    lowPrice?: number;
+    volume?: number;
+    changePercent?: number;
+  }[],
+): Promise<void> {
+  if (snapshots.length === 0) return;
+
+  const now = new Date().toISOString();
+  const rows = snapshots.map((s) => ({
+    asset_id: s.assetId,
+    close_price: s.closePrice,
+    high_price: s.highPrice ?? null,
+    low_price: s.lowPrice ?? null,
+    volume: s.volume ?? null,
+    change_percent: s.changePercent ?? null,
+    recorded_at: now,
+  }));
+
+  // 50개씩 분할 삽입
+  const CHUNK = 50;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const chunk = rows.slice(i, i + CHUNK);
+    const { error } = await supabase.from("market_snapshots").insert(chunk);
+    if (error) console.error(`스냅샷 배치 저장 실패 (${i}~):`, error.message);
+  }
+}
+
+/**
+ * 여러 자산의 히스토리를 한 번에 조회한다. (배치 predict용)
+ * 결과: { [assetId]: MarketSnapshotRow[] }
+ */
+export async function getMarketHistoryBatch(
+  assetIds: string[],
+  days: number = 90,
+): Promise<Record<string, MarketSnapshotRow[]>> {
+  const result: Record<string, MarketSnapshotRow[]> = {};
+  if (assetIds.length === 0) return result;
+
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  // Supabase .in() 최대 제한 고려, 50개씩 분할
+  const CHUNK = 50;
+  for (let i = 0; i < assetIds.length; i += CHUNK) {
+    const chunk = assetIds.slice(i, i + CHUNK);
+    const { data, error } = await supabase
+      .from("market_snapshots")
+      .select("*")
+      .in("asset_id", chunk)
+      .gte("recorded_at", since.toISOString())
+      .order("recorded_at", { ascending: true });
+
+    if (error) {
+      console.error(`히스토리 배치 조회 실패:`, error.message);
+      continue;
+    }
+
+    for (const row of (data ?? []) as MarketSnapshotRow[]) {
+      if (!result[row.asset_id]) result[row.asset_id] = [];
+      result[row.asset_id].push(row);
+    }
+  }
+
+  return result;
+}
+
 // ─── AI Predictions ───────────────────────────────────────────────────────────
 
 /**
@@ -429,6 +503,138 @@ export interface AccuracyStats {
 /**
  * 예측 정확도 통계를 계산한다.
  */
+// ─── Auto Trades ─────────────────────────────────────────────────────────────
+
+export interface AutoTradeRow {
+  id?: string;
+  cycle_id: string;
+  asset_id: string;
+  name: string;
+  signal: string;
+  weight: number;
+  entry_price: number;
+  tp_target: number;
+  sl_target: number;
+  predicted_return: number;
+  holding_days: number;
+  status: "pending" | "filled" | "tp_hit" | "sl_hit" | "expired" | "cancelled";
+  fill_price?: number | null;
+  fill_date?: string | null;
+  exit_price?: number | null;
+  exit_date?: string | null;
+  exit_reason?: string | null;  // '익절' | '손절' | '기간종료'
+  actual_return?: number | null;
+  exit_day?: number | null;
+  created_at?: string;
+  updated_at?: string;
+  expires_at: string;
+}
+
+/**
+ * 자동매매 거래를 일괄 저장한다. (cycle_id + asset_id 중복 시 무시)
+ */
+export async function saveAutoTrades(
+  trades: Omit<AutoTradeRow, "id" | "created_at" | "updated_at">[],
+): Promise<AutoTradeRow[]> {
+  if (trades.length === 0) return [];
+
+  const rows = trades.map((t) => ({
+    cycle_id: t.cycle_id,
+    asset_id: t.asset_id,
+    name: t.name,
+    signal: t.signal,
+    weight: t.weight,
+    entry_price: t.entry_price,
+    tp_target: t.tp_target,
+    sl_target: t.sl_target,
+    predicted_return: t.predicted_return,
+    holding_days: t.holding_days,
+    status: t.status,
+    expires_at: t.expires_at,
+  }));
+
+  const { data, error } = await supabase
+    .from("auto_trades")
+    .upsert(rows, { onConflict: "cycle_id,asset_id", ignoreDuplicates: true })
+    .select();
+
+  if (error) throw new Error(`자동매매 저장 실패: ${error.message}`);
+  return (data ?? []) as AutoTradeRow[];
+}
+
+/**
+ * 활성 상태(pending/filled)인 자동매매를 조회한다.
+ */
+export async function getActiveAutoTrades(): Promise<AutoTradeRow[]> {
+  const { data, error } = await supabase
+    .from("auto_trades")
+    .select("*")
+    .in("status", ["pending", "filled"])
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(`활성 자동매매 조회 실패: ${error.message}`);
+  return (data ?? []) as AutoTradeRow[];
+}
+
+/**
+ * 자동매매 거래를 업데이트한다.
+ */
+export async function updateAutoTrade(
+  id: string,
+  updates: Partial<Pick<AutoTradeRow, "status" | "fill_price" | "fill_date" | "exit_price" | "exit_date" | "exit_reason" | "actual_return" | "exit_day">>,
+): Promise<void> {
+  const { error } = await supabase
+    .from("auto_trades")
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq("id", id);
+
+  if (error) throw new Error(`자동매매 업데이트 실패: ${error.message}`);
+}
+
+/**
+ * 특정 기간의 자동매매 거래를 조회한다.
+ */
+export async function getAutoTradesForWeek(
+  weekStart: string,
+  weekEnd: string,
+): Promise<AutoTradeRow[]> {
+  const { data, error } = await supabase
+    .from("auto_trades")
+    .select("*")
+    .gte("created_at", weekStart)
+    .lte("created_at", weekEnd)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(`주간 자동매매 조회 실패: ${error.message}`);
+  return (data ?? []) as AutoTradeRow[];
+}
+
+/**
+ * 최신 사이클의 자동매매 거래를 조회한다.
+ */
+export async function getLatestAutoTrades(): Promise<AutoTradeRow[]> {
+  // 가장 최근 cycle_id 조회
+  const { data: latest } = await supabase
+    .from("auto_trades")
+    .select("cycle_id")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!latest) return [];
+
+  const { data, error } = await supabase
+    .from("auto_trades")
+    .select("*")
+    .eq("cycle_id", latest.cycle_id)
+    .order("weight", { ascending: false });
+
+  if (error) throw new Error(`최신 자동매매 조회 실패: ${error.message}`);
+  return (data ?? []) as AutoTradeRow[];
+}
+
+// ─── 정확도 통계 ──────────────────────────────────────────────────────────────
+
 export async function getPredictionAccuracy(
   assetId?: string,
   limit: number = 100,
