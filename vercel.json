@@ -9,16 +9,48 @@
       "schedule": "5 5 * * *"
     },
     {
-      "path": "/api/cron/weekly",
+      "path": "/api/cron/predict",
       "schedule": "10 5 * * *"
     },
     {
-      "path": "/api/cron/predict-recover",
+      "path": "/api/cron/predict",
+      "schedule": "15 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict",
       "schedule": "20 5 * * *"
     },
     {
-      "path": "/api/cron/check-trades",
+      "path": "/api/cron/predict",
       "schedule": "25 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict",
+      "schedule": "30 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict",
+      "schedule": "35 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict",
+      "schedule": "40 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict",
+      "schedule": "45 5 * * *"
+    },
+    {
+      "path": "/api/cron/predict",
+      "schedule": "50 5 * * *"
+    },
+    {
+      "path": "/api/cron/weekly",
+      "schedule": "55 5 * * *"
+    },
+    {
+      "path": "/api/cron/check-trades",
+      "schedule": "0 6 * * *"
     },
     {
       "path": "/api/health/prices",
