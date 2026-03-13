@@ -50,8 +50,8 @@ const ASSET_TO_SYMBOL: Record<string, string> = Object.fromEntries(
 // ─── 시간 제한 설정 ──────────────────────────────────────────────────────────
 
 /** 배치당 최대 실행 시간 (ms). 이 시간이 지나면 남은 자산을 다음 배치로 넘긴다.
- *  Vercel Hobby 10초 제한 - 체이닝 여유 1.5초 확보 */
-const TIME_LIMIT_MS = 8500;
+ *  Vercel Hobby 10초 제한 - 체이닝 여유 3초 확보 */
+const TIME_LIMIT_MS = 7000;
 
 /** 시간 초과 체크 */
 function isTimeUp(startTime: number): boolean {
