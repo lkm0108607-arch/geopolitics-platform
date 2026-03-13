@@ -49,8 +49,9 @@ const ASSET_TO_SYMBOL: Record<string, string> = Object.fromEntries(
 
 // ─── 시간 제한 설정 ──────────────────────────────────────────────────────────
 
-/** 배치당 최대 실행 시간 (ms). 이 시간이 지나면 남은 자산을 다음 배치로 넘긴다. */
-const TIME_LIMIT_MS = 7000;
+/** 배치당 최대 실행 시간 (ms). 이 시간이 지나면 남은 자산을 다음 배치로 넘긴다.
+ *  Vercel Hobby 10초 제한 - 체이닝 여유 1.5초 확보 */
+const TIME_LIMIT_MS = 8500;
 
 /** 시간 초과 체크 */
 function isTimeUp(startTime: number): boolean {
@@ -396,25 +397,38 @@ async function runBatchPredict(
     }
   }
 
-  // 히스토리 부족 자산: 네이버 차트 / Yahoo fallback (병렬)
+  // 히스토리 부족 자산: 네이버 차트 / Yahoo fallback
+  // 3초 타임아웃 + 최대 5개만 시도 (시간 절약)
   const needFallback = prefetchAssets.filter(
     (id) => !assetDataMap[id] || assetDataMap[id].length < 20,
   );
   if (needFallback.length > 0 && !isTimeUp(t0)) {
+    const fallbackSlice = needFallback.slice(0, 5); // 최대 5개만
+    const FALLBACK_TIMEOUT = 3000;
+    const fallbackWithTimeout = (promise: Promise<void>) =>
+      Promise.race([
+        promise,
+        new Promise<void>((resolve) => setTimeout(resolve, FALLBACK_TIMEOUT)),
+      ]);
+
     await Promise.allSettled(
-      needFallback.map(async (assetId) => {
-        if (Object.values(YAHOO_GLOBAL_SYMBOLS).includes(assetId)) {
-          const sym = ASSET_TO_SYMBOL[assetId];
-          if (!sym) return;
-          const yahooData = await fetchYahooHistorical([sym]);
-          if (yahooData[assetId]?.length >= 20) assetDataMap[assetId] = yahooData[assetId];
-          return;
-        }
-        const ticker = getNaverTicker(assetId);
-        if (!ticker) return;
-        const bars = await fetchNaverChart(ticker);
-        if (bars.length >= 20) assetDataMap[assetId] = bars;
-      }),
+      fallbackSlice.map((assetId) =>
+        fallbackWithTimeout(
+          (async () => {
+            if (Object.values(YAHOO_GLOBAL_SYMBOLS).includes(assetId)) {
+              const sym = ASSET_TO_SYMBOL[assetId];
+              if (!sym) return;
+              const yahooData = await fetchYahooHistorical([sym]);
+              if (yahooData[assetId]?.length >= 20) assetDataMap[assetId] = yahooData[assetId];
+              return;
+            }
+            const ticker = getNaverTicker(assetId);
+            if (!ticker) return;
+            const bars = await fetchNaverChart(ticker);
+            if (bars.length >= 20) assetDataMap[assetId] = bars;
+          })(),
+        ),
+      ),
     );
   }
 
