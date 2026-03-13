@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60; // Pro에서는 60초, Hobby에서는 무시됨 (10초)
 import { runEnsemble } from "@/lib/ai/ensemble";
@@ -327,7 +327,7 @@ async function runBatchCollect(cycleId: string, baseUrl: string, secret?: string
 
   // 3. 다음 배치 체이닝 → predict offset=0
   const secretParam = secret ? `&secret=${secret}` : "";
-  fireAndForget(`${baseUrl}/api/ai/predict?batch=predict&offset=0&cycleId=${cycleId}${secretParam}`);
+  chainNext(`${baseUrl}/api/ai/predict?batch=predict&offset=0&cycleId=${cycleId}${secretParam}`);
 
   const elapsed = Date.now() - t0;
   console.log(`[collect] 완료: ${snapshots.length}개 스냅샷, ${elapsed}ms`);
@@ -356,7 +356,7 @@ async function runBatchPredict(
   if (remaining.length === 0) {
     // 모든 자산 처리 완료 → final로
     const secretParam = secret ? `&secret=${secret}` : "";
-    fireAndForget(`${baseUrl}/api/ai/predict?batch=final&cycleId=${cycleId}${secretParam}`);
+    chainNext(`${baseUrl}/api/ai/predict?batch=final&cycleId=${cycleId}${secretParam}`);
     return NextResponse.json({
       success: true, batch: "predict", cycleId, offset,
       message: "모든 자산 처리 완료, final 배치로 이동",
@@ -376,7 +376,7 @@ async function runBatchPredict(
 
   if (isTimeUp(t0)) {
     const secretParam = secret ? `&secret=${secret}` : "";
-    fireAndForget(`${baseUrl}/api/ai/predict?batch=predict&offset=${offset}&cycleId=${cycleId}${secretParam}`);
+    chainNext(`${baseUrl}/api/ai/predict?batch=predict&offset=${offset}&cycleId=${cycleId}${secretParam}`);
     return NextResponse.json({
       success: true, batch: "predict", cycleId, offset,
       processed: 0, message: "히스토리 로드 지연, 재시도",
@@ -492,10 +492,10 @@ async function runBatchPredict(
 
   if (newOffset >= ALL_ASSET_IDS.length) {
     // 모든 자산 완료 → final
-    fireAndForget(`${baseUrl}/api/ai/predict?batch=final&cycleId=${cycleId}${secretParam}`);
+    chainNext(`${baseUrl}/api/ai/predict?batch=final&cycleId=${cycleId}${secretParam}`);
   } else {
     // 남은 자산 → 다음 predict 배치
-    fireAndForget(`${baseUrl}/api/ai/predict?batch=predict&offset=${newOffset}&cycleId=${cycleId}${secretParam}`);
+    chainNext(`${baseUrl}/api/ai/predict?batch=predict&offset=${newOffset}&cycleId=${cycleId}${secretParam}`);
   }
 
   const elapsed = Date.now() - t0;
@@ -612,15 +612,24 @@ async function runBatchFinal(cycleId: string) {
   });
 }
 
-// ─── fire-and-forget 유틸 ──────────────────────────────────────────────────
+// ─── 체이닝 유틸 (after API 사용) ──────────────────────────────────────────
 
-function fireAndForget(url: string) {
+/**
+ * 응답 후에도 실행이 보장되는 체이닝 호출.
+ * Next.js after() API를 사용하여 서버리스 함수가 응답 후에도
+ * fetch를 완료할 수 있도록 한다.
+ */
+function chainNext(url: string) {
   console.log(`[chain] → ${url}`);
-  fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-  }).catch((err) => {
-    console.error(`체이닝 호출 실패 (${url}):`, err);
+  after(async () => {
+    try {
+      await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+    } catch (err) {
+      console.error(`체이닝 호출 실패 (${url}):`, err);
+    }
   });
 }
 
