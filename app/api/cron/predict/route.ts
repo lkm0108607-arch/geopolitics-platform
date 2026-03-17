@@ -93,12 +93,13 @@ export async function GET(request: Request) {
     }
 
     // 6. 예측이 부족하면 → 다음 predict 배치 실행
-    // offset = 이미 처리된 예측 수 (대략적 추정)
+    // offset = 고유 자산 수 기준 (중복 예측 제외)
     const { data: existing } = await supabase
       .from("ai_predictions")
       .select("asset_id")
       .eq("cycle_id", todayCycleId);
-    const resumeOffset = (existing ?? []).length;
+    const uniqueAssets = new Set((existing ?? []).map((e) => e.asset_id));
+    const resumeOffset = uniqueAssets.size;
 
     const res = await fetch(
       `${baseUrl}/api/ai/predict?batch=predict&offset=${resumeOffset}&cycleId=${todayCycleId}`,

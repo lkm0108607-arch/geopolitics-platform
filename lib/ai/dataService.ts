@@ -43,7 +43,45 @@ export interface PredictionResultRow {
   actual_direction: string;
   was_correct: boolean;
   actual_change_percent?: number | null;
+  accuracy_score?: number | null;
+  grade?: string | null;
+  abstained?: boolean | null;
   evaluated_at?: string;
+}
+
+// ─── 누적 메모리 타입 (Phase 2) ──────────────────────────────────────────────
+
+export interface ModelAccuracyRow {
+  id?: string;
+  asset_id: string;
+  model_name: string;
+  total_predictions: number;
+  correct_predictions: number;
+  accuracy_ema: number;
+  avg_confidence_when_correct?: number | null;
+  avg_confidence_when_wrong?: number | null;
+  best_regime?: string | null;
+  worst_regime?: string | null;
+  last_updated_at?: string;
+}
+
+export interface ConfidenceCalibrationRow {
+  id?: string;
+  model_name: string;
+  confidence_bucket: number;
+  total_predictions: number;
+  correct_predictions: number;
+  actual_hit_rate: number;
+  last_updated_at?: string;
+}
+
+export interface RegimeHistoryRow {
+  id?: string;
+  detected_at?: string;
+  regime: string;
+  regime_confidence: number;
+  kospi_atr_percent?: number | null;
+  avg_model_accuracy?: number | null;
 }
 
 export interface ModelWeightsRow {
@@ -216,13 +254,16 @@ export async function savePrediction(prediction: {
   timingPrediction?: unknown;
   debateResult?: unknown;
   juryVerdict?: unknown;
+  abstained?: boolean;
+  abstainReason?: string;
 }): Promise<AIPredictionRow> {
-  // timingPrediction, debateResult, juryVerdict를 sub_model_votes JSON에 함께 저장
+  // timingPrediction, debateResult, juryVerdict, abstained를 sub_model_votes JSON에 함께 저장
   const extendedVotes = {
     ...(prediction.subModelVotes as unknown as Record<string, unknown>),
     ...(prediction.timingPrediction ? { timingPrediction: prediction.timingPrediction } : {}),
     ...(prediction.debateResult ? { debateResult: prediction.debateResult } : {}),
     ...(prediction.juryVerdict ? { juryVerdict: prediction.juryVerdict } : {}),
+    ...(prediction.abstained ? { abstained: true, abstainReason: prediction.abstainReason } : {}),
   };
   const row = {
     cycle_id: prediction.cycleId,
@@ -234,13 +275,34 @@ export async function savePrediction(prediction: {
     sub_model_votes: extendedVotes,
   };
 
-  // 같은 cycle_id + asset_id 조합이 이미 있으면 덮어쓰기 (중복 방지)
-  // Supabase upsert는 unique constraint가 필요하므로, 먼저 삭제 후 삽입
-  await supabase
+  // 같은 cycle_id + asset_id에 이미 예측이 있는지 확인
+  const { data: existing } = await supabase
     .from("ai_predictions")
-    .delete()
+    .select("id")
     .eq("cycle_id", prediction.cycleId)
     .eq("asset_id", prediction.assetId);
+
+  if (existing && existing.length > 0) {
+    // 이미 평가된 예측이 있으면 삭제하지 않고 스킵 (고아 결과 방지)
+    const existingIds = existing.map((e) => e.id);
+    const { data: hasResults } = await supabase
+      .from("prediction_results")
+      .select("prediction_id")
+      .in("prediction_id", existingIds)
+      .limit(1);
+
+    if (hasResults && hasResults.length > 0) {
+      // 이미 평가됨 → 기존 예측 유지, 새로 저장하지 않음
+      return existing[0] as unknown as AIPredictionRow;
+    }
+
+    // 미평가 예측만 삭제 후 재생성
+    await supabase
+      .from("ai_predictions")
+      .delete()
+      .eq("cycle_id", prediction.cycleId)
+      .eq("asset_id", prediction.assetId);
+  }
 
   const { data, error } = await supabase
     .from("ai_predictions")
@@ -277,7 +339,10 @@ export async function getLatestPredictions(
     .limit(1)
     .single();
 
-  if (latestError || !latest) return [];
+  if (latestError || !latest) {
+    console.warn("[getLatestPredictions] 최신 예측 사이클 없음:", latestError?.message ?? "데이터 없음");
+    return [];
+  }
 
   const { data, error } = await supabase
     .from("ai_predictions")
@@ -289,10 +354,112 @@ export async function getLatestPredictions(
   return (data ?? []) as AIPredictionRow[];
 }
 
+/**
+ * 아직 평가되지 않은 예측을 조회한다.
+ * prediction_results에 해당 prediction_id가 없는 예측만 반환.
+ * 최근 7일 이내 예측 중에서 검색하며, 가장 오래된 미평가 사이클부터 반환.
+ */
+export async function getUnevaluatedPredictions(): Promise<AIPredictionRow[]> {
+  // 1. 최근 7일간 고유 사이클 목록 조회 (전체 예측을 가져오면 1000행 제한에 걸림)
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+  // 오늘 사이클은 아직 예측 진행중일 수 있으므로 제외 (어제 이전 사이클만 평가)
+  const todayCycleId = `ai-cycle-${new Date().toISOString().slice(0, 10)}`;
+
+  const { data: cycleSample, error: csErr } = await supabase
+    .from("ai_predictions")
+    .select("cycle_id")
+    .gte("created_at", sevenDaysAgo.toISOString())
+    .neq("cycle_id", todayCycleId)
+    .order("created_at", { ascending: true })
+    .limit(500);
+
+  if (csErr || !cycleSample || cycleSample.length === 0) {
+    // 어제 이전 사이클이 없으면 오늘 사이클 포함해서 재시도
+    console.log("[getUnevaluatedPredictions] 어제 이전 사이클 없음, 오늘 포함 재시도");
+    const { data: fallbackSample } = await supabase
+      .from("ai_predictions")
+      .select("cycle_id")
+      .gte("created_at", sevenDaysAgo.toISOString())
+      .order("created_at", { ascending: true })
+      .limit(500);
+
+    if (!fallbackSample || fallbackSample.length === 0) {
+      console.warn("[getUnevaluatedPredictions] 최근 7일간 예측이 없습니다.");
+      return [];
+    }
+    // fallback으로 진행
+    return findUnevaluatedInCycles(fallbackSample);
+  }
+
+  return findUnevaluatedInCycles(cycleSample);
+}
+
+/** 사이클 목록에서 미평가 사이클을 찾아 해당 예측을 반환 */
+async function findUnevaluatedInCycles(
+  cycleSample: { cycle_id: string }[],
+): Promise<AIPredictionRow[]> {
+  const uniqueCycles = [...new Set(cycleSample.map((c) => c.cycle_id))];
+
+  // 2. 각 사이클별로 미평가 예측이 있는지 확인 (가장 오래된 것부터)
+  for (const cycleId of uniqueCycles) {
+    const { data: cyclePreds } = await supabase
+      .from("ai_predictions")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .order("created_at", { ascending: false });
+
+    if (!cyclePreds || cyclePreds.length === 0) continue;
+
+    // 중복 자산 제거 (같은 asset_id → 가장 최신 것만)
+    const assetMap = new Map<string, AIPredictionRow>();
+    for (const p of cyclePreds as AIPredictionRow[]) {
+      if (!assetMap.has(p.asset_id)) {
+        assetMap.set(p.asset_id, p);
+      }
+    }
+    const dedupedPreds = Array.from(assetMap.values());
+
+    // 이 사이클의 예측 중 평가된 것 확인
+    const predIds = dedupedPreds.map((p) => p.id!).filter(Boolean);
+    const evaluatedIds = new Set<string>();
+
+    const CHUNK = 50;
+    for (let i = 0; i < predIds.length; i += CHUNK) {
+      const chunk = predIds.slice(i, i + CHUNK);
+      const { data: results } = await supabase
+        .from("prediction_results")
+        .select("prediction_id")
+        .in("prediction_id", chunk);
+
+      if (results) {
+        for (const r of results) {
+          evaluatedIds.add((r as { prediction_id: string }).prediction_id);
+        }
+      }
+    }
+
+    const unevaluated = dedupedPreds.filter((p) => p.id && !evaluatedIds.has(p.id));
+
+    if (unevaluated.length > 0) {
+      console.log(
+        `[getUnevaluatedPredictions] 미평가 사이클 ${cycleId} 발견: ` +
+        `${unevaluated.length}건 미평가 / ${dedupedPreds.length}건 총 (중복 제거 후)`,
+      );
+      return unevaluated;
+    }
+  }
+
+  console.warn("[getUnevaluatedPredictions] 모든 사이클 평가 완료.");
+  return [];
+}
+
 // ─── Prediction Results ───────────────────────────────────────────────────────
 
 /**
  * 예측 평가 결과를 저장한다.
+ * 같은 prediction_id에 대한 결과가 이미 있으면 중복 저장하지 않는다.
  */
 export async function savePredictionResult(result: {
   predictionId: string;
@@ -302,8 +469,22 @@ export async function savePredictionResult(result: {
   actualDirection: string;
   wasCorrect: boolean;
   actualChangePercent?: number;
+  accuracyScore?: number;
+  grade?: string;
+  abstained?: boolean;
 }): Promise<PredictionResultRow> {
-  const row = {
+  // 이미 평가된 예측인지 확인 (중복 결과 방지)
+  const { data: existing } = await supabase
+    .from("prediction_results")
+    .select("id")
+    .eq("prediction_id", result.predictionId)
+    .limit(1);
+
+  if (existing && existing.length > 0) {
+    return existing[0] as unknown as PredictionResultRow;
+  }
+
+  const row: Record<string, unknown> = {
     prediction_id: result.predictionId,
     cycle_id: result.cycleId,
     asset_id: result.assetId,
@@ -313,11 +494,34 @@ export async function savePredictionResult(result: {
     actual_change_percent: result.actualChangePercent ?? null,
   };
 
-  const { data, error } = await supabase
+  // 새 필드 추가 (컬럼이 없으면 fallback으로 무시됨)
+  if (result.accuracyScore !== undefined) row.accuracy_score = result.accuracyScore;
+  if (result.grade) row.grade = result.grade;
+  if (result.abstained !== undefined) row.abstained = result.abstained;
+
+  let { data, error } = await supabase
     .from("prediction_results")
     .insert(row)
     .select()
     .single();
+
+  // accuracy_score/grade/abstained 컬럼이 없으면 기본 필드만으로 재시도
+  if (error) {
+    const fallbackRow = {
+      prediction_id: result.predictionId,
+      cycle_id: result.cycleId,
+      asset_id: result.assetId,
+      predicted_direction: result.predictedDirection,
+      actual_direction: result.actualDirection,
+      was_correct: result.wasCorrect,
+      actual_change_percent: result.actualChangePercent ?? null,
+    };
+    ({ data, error } = await supabase
+      .from("prediction_results")
+      .insert(fallbackRow)
+      .select()
+      .single());
+  }
 
   if (error) throw new Error(`예측 결과 저장 실패: ${error.message}`);
   return data as PredictionResultRow;
@@ -500,9 +704,6 @@ export interface AccuracyStats {
   byDirection: Record<string, { total: number; correct: number; accuracy: number }>;
 }
 
-/**
- * 예측 정확도 통계를 계산한다.
- */
 // ─── Auto Trades ─────────────────────────────────────────────────────────────
 
 export interface AutoTradeRow {
@@ -682,4 +883,200 @@ export async function getPredictionAccuracy(
         : 0,
     byDirection,
   };
+}
+
+// ─── Phase 2: 누적 메모리 인프라 ─────────────────────────────────────────────
+
+/**
+ * 자산별 모델별 누적 정확도를 업데이트한다.
+ * EMA(지수이동평균) 방식으로 최근 성과에 가중치를 둔다.
+ */
+export async function upsertModelAccuracy(
+  assetId: string,
+  modelName: string,
+  wasCorrect: boolean,
+  confidence: number,
+  regime: string,
+): Promise<void> {
+  const EMA_ALPHA = 0.1; // EMA 가중치 (최근 값 10% 반영)
+
+  try {
+    // 기존 데이터 조회
+    const { data: existing } = await supabase
+      .from("model_accuracy_history")
+      .select("*")
+      .eq("asset_id", assetId)
+      .eq("model_name", modelName)
+      .single();
+
+    if (existing) {
+      const row = existing as ModelAccuracyRow;
+      const newTotal = row.total_predictions + 1;
+      const newCorrect = row.correct_predictions + (wasCorrect ? 1 : 0);
+      const newEMA = row.accuracy_ema * (1 - EMA_ALPHA) + (wasCorrect ? 1 : 0) * EMA_ALPHA;
+
+      // 정답/오답 시 평균 confidence 업데이트
+      const updates: Record<string, unknown> = {
+        total_predictions: newTotal,
+        correct_predictions: newCorrect,
+        accuracy_ema: Math.round(newEMA * 1000) / 1000,
+        last_updated_at: new Date().toISOString(),
+      };
+
+      if (wasCorrect) {
+        const prevAvg = row.avg_confidence_when_correct ?? confidence;
+        const prevCount = row.correct_predictions;
+        updates.avg_confidence_when_correct = prevCount > 0
+          ? Math.round(((prevAvg * prevCount + confidence) / (prevCount + 1)) * 100) / 100
+          : confidence;
+      } else {
+        const prevAvg = row.avg_confidence_when_wrong ?? confidence;
+        const prevWrongCount = row.total_predictions - row.correct_predictions;
+        updates.avg_confidence_when_wrong = prevWrongCount > 0
+          ? Math.round(((prevAvg * prevWrongCount + confidence) / (prevWrongCount + 1)) * 100) / 100
+          : confidence;
+      }
+
+      await supabase
+        .from("model_accuracy_history")
+        .update(updates)
+        .eq("asset_id", assetId)
+        .eq("model_name", modelName);
+    } else {
+      // 새 레코드 생성
+      await supabase
+        .from("model_accuracy_history")
+        .insert({
+          asset_id: assetId,
+          model_name: modelName,
+          total_predictions: 1,
+          correct_predictions: wasCorrect ? 1 : 0,
+          accuracy_ema: wasCorrect ? 1.0 : 0.0,
+          avg_confidence_when_correct: wasCorrect ? confidence : null,
+          avg_confidence_when_wrong: wasCorrect ? null : confidence,
+          best_regime: wasCorrect ? regime : null,
+          worst_regime: wasCorrect ? null : regime,
+        });
+    }
+  } catch {
+    // 테이블이 없으면 무시
+  }
+}
+
+/**
+ * 여러 자산의 모델 정확도를 배치 조회한다.
+ */
+export async function getModelAccuracyBatch(
+  assetIds: string[],
+): Promise<Record<string, ModelAccuracyRow[]>> {
+  const result: Record<string, ModelAccuracyRow[]> = {};
+  if (assetIds.length === 0) return result;
+
+  try {
+    const { data, error } = await supabase
+      .from("model_accuracy_history")
+      .select("*")
+      .in("asset_id", assetIds);
+
+    if (error || !data) return result;
+
+    for (const row of data as ModelAccuracyRow[]) {
+      if (!result[row.asset_id]) result[row.asset_id] = [];
+      result[row.asset_id].push(row);
+    }
+  } catch {
+    // 테이블이 없으면 빈 결과 반환
+  }
+  return result;
+}
+
+/**
+ * 신뢰도 교정 데이터를 업데이트한다.
+ */
+export async function upsertConfidenceCalibration(
+  modelName: string,
+  confidenceBucket: number,
+  wasCorrect: boolean,
+): Promise<void> {
+  try {
+    const { data: existing } = await supabase
+      .from("confidence_calibration")
+      .select("*")
+      .eq("model_name", modelName)
+      .eq("confidence_bucket", confidenceBucket)
+      .single();
+
+    if (existing) {
+      const row = existing as ConfidenceCalibrationRow;
+      const newTotal = row.total_predictions + 1;
+      const newCorrect = row.correct_predictions + (wasCorrect ? 1 : 0);
+      const newHitRate = newTotal > 0 ? newCorrect / newTotal : 0;
+
+      await supabase
+        .from("confidence_calibration")
+        .update({
+          total_predictions: newTotal,
+          correct_predictions: newCorrect,
+          actual_hit_rate: Math.round(newHitRate * 1000) / 1000,
+          last_updated_at: new Date().toISOString(),
+        })
+        .eq("model_name", modelName)
+        .eq("confidence_bucket", confidenceBucket);
+    } else {
+      await supabase
+        .from("confidence_calibration")
+        .insert({
+          model_name: modelName,
+          confidence_bucket: confidenceBucket,
+          total_predictions: 1,
+          correct_predictions: wasCorrect ? 1 : 0,
+          actual_hit_rate: wasCorrect ? 1.0 : 0.0,
+        });
+    }
+  } catch {
+    // 테이블이 없으면 무시
+  }
+}
+
+/**
+ * 특정 모델의 신뢰도 교정 커브를 조회한다.
+ */
+export async function getConfidenceCalibration(
+  modelName: string,
+): Promise<ConfidenceCalibrationRow[]> {
+  try {
+    const { data, error } = await supabase
+      .from("confidence_calibration")
+      .select("*")
+      .eq("model_name", modelName)
+      .order("confidence_bucket", { ascending: true });
+
+    if (error || !data) return [];
+    return data as ConfidenceCalibrationRow[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 시장 레짐 감지 기록을 저장한다.
+ */
+export async function saveRegimeDetection(
+  regime: string,
+  confidence: number,
+  atrPercent?: number,
+  accuracy?: number,
+): Promise<void> {
+  try {
+    await supabase
+      .from("regime_history")
+      .insert({
+        regime,
+        regime_confidence: confidence,
+        kospi_atr_percent: atrPercent ?? null,
+        avg_model_accuracy: accuracy ?? null,
+      });
+  } catch {
+    // 테이블이 없으면 무시
+  }
 }
